@@ -36,7 +36,7 @@ def route_intent(
         route = "emergency"
     elif label == "clinic_search":
         route = "clinic_search"
-    elif label == "vaccination":
+    elif label in {"vaccination", "pet_care", "general_info"}:
         route = "medical_query"
 
     return RouteDecision(intent=label, confidence=confidence, route=route)

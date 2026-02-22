@@ -993,4 +993,157 @@ With prompt structuring integrated, the system now ensures:
 
 END OF PRODUCTION ARCHITECTURE DOCUMENT
 
+---------------------------------------
 
+## Architecture Update - 1
+
+# 8. Hybrid Partial Response Mode – Architectural Amendment
+
+This section introduces a controlled Hybrid Partial Response Mode to resolve over-restrictive clarification behavior for general informational queries (e.g., vaccination schedules) while preserving medical safety.
+
+This amendment modifies behavior in the following layers:
+- 3.3 Chat Assistant Core (Routing Logic)
+- 3.5 Retrieval Confidence & Live Search Logic
+- 5.1 Master System Prompt
+- 5.3 Question Engine Prompt
+- 5.10 LLM Call Workflow Diagram
+
+No other architectural components are altered.
+
+---
+
+## 8.1 Amendment to 3.5 Retrieval Confidence & Live Search Logic
+
+### Updated Decision Matrix
+
+| top_score | Intent Type | Action |
+|------------|-------------|--------|
+| > 0.82 | Any | FULL_RAG |
+| 0.70–0.82 | vaccination / pet_care / general_info | HYBRID_PARTIAL |
+| 0.70–0.82 | symptom_inquiry | CLARIFICATION_REQUIRED |
+| < 0.70 | Any | LIVE_SEARCH |
+
+---
+
+## 8.2 Amendment to 3.3 Chat Assistant Core (Routing Engine)
+
+```
+def determine_response_mode(intent, retrieval_score, emergency_score):
+
+    if emergency_score >= EMERGENCY_THRESHOLD:
+        return "EMERGENCY"
+
+    if retrieval_score > 0.82:
+        return "FULL_RAG"
+
+    if 0.70 <= retrieval_score <= 0.82:
+        if intent in ["vaccination", "pet_care", "general_info"]:
+            return "HYBRID_PARTIAL"
+        if intent == "symptom_inquiry":
+            return "CLARIFICATION_REQUIRED"
+
+    return "LIVE_SEARCH"
+```
+
+Routing Replacement:
+
+```
+response_mode = determine_response_mode(intent, retrieval_score, emergency_score)
+
+if response_mode == "FULL_RAG":
+    return rag_flow(preprocessed)
+
+if response_mode == "HYBRID_PARTIAL":
+    answer = rag_flow(preprocessed)
+    questions = clarification_flow(preprocessed)
+    return merge(answer, questions)
+
+if response_mode == "CLARIFICATION_REQUIRED":
+    return clarification_flow(preprocessed)
+
+if response_mode == "LIVE_SEARCH":
+    return live_search_flow(preprocessed)
+```
+
+---
+
+## 8.3 Amendment to 5.1 Master System Prompt
+
+Replace:
+
+"If information is missing, ask clarifying questions."
+
+With:
+
+"If partial information is available, provide safe general guidance first.
+Ask clarifying questions only when missing details significantly affect safety or accuracy."
+
+---
+
+## 8.4 Amendment to 5.3 Question Engine Prompt
+
+Replace:
+
+"Do not provide medical advice yet."
+
+With:
+
+"Only avoid providing guidance if missing information prevents safe advice.
+If safe general guidance is possible, provide it before asking clarifications."
+
+---
+
+## 8.5 Amendment to 5.10 LLM Call Workflow Diagram
+
+```mermaid
+flowchart TD
+
+    INPUT[User Input] --> CHECK[Emergency Check]
+    CHECK -->|High| EMERG_PROMPT[Emergency Prompt]
+    CHECK -->|Normal| RETRIEVE[Retrieval Confidence Check]
+
+    RETRIEVE -->|High| RAG_PROMPT
+    RETRIEVE -->|Medium + Informational| HYBRID_FLOW
+    RETRIEVE -->|Medium + Symptom| QUESTION_PROMPT
+    RETRIEVE -->|Low| LIVE_SEARCH
+
+    HYBRID_FLOW --> RAG_PROMPT
+    HYBRID_FLOW --> QUESTION_PROMPT
+
+    RAG_PROMPT --> LLM
+    QUESTION_PROMPT --> LLM
+    EMERG_PROMPT --> LLM
+    LIVE_SEARCH --> LIVE_PROMPT
+    LIVE_PROMPT --> LLM
+
+    LLM --> VALIDATE[Structured Output Validation]
+```
+
+---
+
+## 8.6 Safety Preservation Rule
+
+HYBRID_PARTIAL mode is prohibited when:
+- emergency_score >= threshold
+- dosage-related queries
+- toxic exposure queries
+- seizure / collapse / respiratory distress indicators
+
+---
+
+## 8.7 Expected Behavioral Outcome
+
+Example Query:
+"3 month old cat vaccination schedule"
+
+System Output:
+- Explanation of vaccination
+- General kitten vaccination schedule
+- Follow-up questions about prior doses
+- Indoor/outdoor status clarification
+
+---
+
+END OF ARCHITECTURAL UPDATE - 1
+
+---

@@ -32,6 +32,11 @@ INTENT_EXEMPLARS: Dict[str, List[str]] = {
         "what is parvovirus",
         "what is zoonotic disease",
     ],
+    "pet_care": [
+        "best diet for adult dog",
+        "how often should I groom my cat",
+        "flea and tick prevention",
+    ],
 }
 
 
@@ -59,6 +64,23 @@ def rule_based_intent(text: str) -> Tuple[str | None, float]:
         return "clinic_search", 0.85
     if any(k in lowered for k in ["vaccine", "vaccination", "rabies shot"]):
         return "vaccination", 0.8
+    if any(
+        k in lowered
+        for k in [
+            "diet",
+            "nutrition",
+            "groom",
+            "grooming",
+            "flea",
+            "tick",
+            "parasite prevention",
+            "spay",
+            "neuter",
+            "behavior",
+            "training",
+        ]
+    ):
+        return "pet_care", 0.78
     if any(k in lowered for k in EMERGENCY_KEYWORDS):
         return "emergency", 0.9
     return None, 0.0
@@ -101,11 +123,16 @@ def embedding_similarity_intent(
 def llm_intent(text: str, llm: GeminiClient) -> str:
     prompt = compose_prompt("prompts/intent_prompt.txt", message=text)
     label = llm.generate(prompt).strip().lower()
+    if label == "symptom_inquiry":
+        label = "medical_query"
+    if label == "clinic_locator":
+        label = "clinic_search"
     for allowed in [
         "emergency",
         "clinic_search",
         "medical_query",
         "vaccination",
+        "pet_care",
         "general_info",
         "missing_info",
     ]:

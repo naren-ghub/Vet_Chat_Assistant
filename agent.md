@@ -74,3 +74,13 @@
 - Added: Error handling and caching strategies.
 - Added: Security, privacy, observability, scaling.
 - Added: Prompt governance and citation system requirements.
+
+## 2026-02-22 15:40 - Implement Hybrid Partial Response Mode
+- Scope: Apply Architecture Update - 1 for HYBRID_PARTIAL routing.
+- Added: pet_care intent support (exemplars, rule-based, LLM mapping).
+- Added: hybrid eligibility gate for dosage/toxic/respiratory/emergency exclusions.
+- Added: response_mode routing for full RAG, hybrid partial, clarification, live search.
+- Added: live search override for "latest/recent" queries.
+- Updated: master and question prompts for partial guidance before clarifications.
+- Updated: question engine to parse JSON guidance + questions.
+- Tests: Added hybrid partial, live search override, and hybrid block tests; all tests passing.

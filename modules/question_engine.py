@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import List
+from typing import List, Tuple
+
+import json
 
 from core.prompts import compose_prompt
 
@@ -17,7 +19,9 @@ def detect_missing_fields(text: str, pet_profile: dict) -> List[str]:
     return missing
 
 
-def generate_questions(llm, user_input: str, missing_fields: List[str], suspected_intent: str) -> List[str]:
+def generate_questions(
+    llm, user_input: str, missing_fields: List[str], suspected_intent: str
+) -> Tuple[str, List[str]]:
     prompt = compose_prompt(
         "prompts/question_prompt.txt",
         user_input=user_input,
@@ -25,9 +29,19 @@ def generate_questions(llm, user_input: str, missing_fields: List[str], suspecte
         suspected_intent=suspected_intent,
     )
     text = llm.generate(prompt)
+    guidance = ""
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        try:
+            payload = json.loads(stripped)
+            guidance = (payload.get("guidance") or "").strip()
+            questions = [q.strip() for q in payload.get("questions") or [] if q.strip()]
+            return guidance, questions[:4]
+        except json.JSONDecodeError:
+            pass
     questions = []
     for line in text.splitlines():
         line = line.strip().lstrip("-•").strip()
         if line:
             questions.append(line)
-    return questions[:4]
+    return guidance, questions[:4]

@@ -18,8 +18,9 @@ from core.response import (
     validate_kb_citations,
 )
 from core.router import route_intent
-from core.safety import apply_safety_guardrails
+from core.safety import DOSAGE_PATTERN, apply_safety_guardrails
 from core.types import ChatResponse, SessionState
+from core.intent import emergency_score, has_immediate_override
 from modules.emergency import is_emergency
 from modules.live_search import live_search
 from modules.map_locator import build_map_link
@@ -34,6 +35,18 @@ _retrieval_cache = TTLCache(ttl_seconds=3600)
 _response_cache = TTLCache(ttl_seconds=3600)
 _llm_cache = TTLCache(ttl_seconds=3600)
 _logger = get_logger("vet-chat")
+_TOXIC_KEYWORDS = {
+    "poison",
+    "toxic",
+    "ingestion",
+    "chocolate",
+    "xylitol",
+    "grape",
+    "grapes",
+    "raisin",
+    "raisins",
+    "antifreeze",
+}
 
 
 def _build_filter_key(session: SessionState) -> str:
@@ -66,6 +79,37 @@ def _use_live_search(text: str, confidence: float, threshold: float) -> bool:
     if "latest" in text.lower() or "recent" in text.lower():
         return True
     return confidence < threshold
+
+
+def _hybrid_allowed(query: str, emergency_threshold: float) -> bool:
+    lowered = query.lower()
+    if has_immediate_override(query):
+        return False
+    if emergency_score(query) >= emergency_threshold:
+        return False
+    if DOSAGE_PATTERN.search(query):
+        return False
+    if any(keyword in lowered for keyword in _TOXIC_KEYWORDS):
+        return False
+    return True
+
+
+def _determine_response_mode(
+    intent: str,
+    top_score: float,
+    emergency_score_value: float,
+    emergency_threshold: float,
+    hybrid_allowed: bool,
+) -> str:
+    if emergency_score_value >= emergency_threshold:
+        return "emergency"
+    if top_score > 0.82:
+        return "full_rag"
+    if 0.70 <= top_score <= 0.82:
+        if intent in {"vaccination", "pet_care", "general_info"} and hybrid_allowed:
+            return "hybrid_partial"
+        return "clarification_required"
+    return "live_search"
 
 
 def _format_live_search_results(results) -> str:
@@ -139,7 +183,6 @@ def chat(
         config.intent_high_threshold,
         config.intent_medium_threshold,
     )
-    from core.intent import emergency_score
     _logger.info("emergency_score=%.2f", emergency_score(query))
     session.last_intent = route.intent
     _logger.info("intent=%s confidence=%.2f route=%s", route.intent, route.confidence, route.route)
@@ -161,14 +204,6 @@ def chat(
             text=answer,
             emergency=True,
             vet_response=vet_response.model_dump(),
-        )
-
-    missing = detect_missing_fields(query, session.pet_profile)
-    if missing:
-        questions = generate_questions(llm, query, missing, route.intent)
-        return ChatResponse(
-            text="I need a few details to help.",
-            follow_up_questions=questions,
         )
 
     profile_key = json.dumps(session.pet_profile, sort_keys=True, default=str)
@@ -199,17 +234,50 @@ def chat(
     distances = retrieval.get("distances", [[]])[0]
     top_score = 1.0 - (min(distances) if distances else 1.0)
     _logger.info("retrieval_top_score=%.2f", top_score)
+    emergency_score_value = emergency_score(query)
+    hybrid_allowed = _hybrid_allowed(query, config.emergency_threshold)
+    response_mode = _determine_response_mode(
+        route.intent,
+        top_score,
+        emergency_score_value,
+        config.emergency_threshold,
+        hybrid_allowed,
+    )
 
-    if 0.70 <= top_score <= 0.82:
-        clarification = detect_missing_fields(query, session.pet_profile)
-        if clarification:
-            questions = generate_questions(llm, query, clarification, route.intent)
-            return ChatResponse(
-                text="I need a few details to help.",
-                follow_up_questions=questions,
+    force_live_search = "latest" in query.lower() or "recent" in query.lower()
+    if config.live_search_enabled and force_live_search:
+        response_mode = "live_search"
+
+    if response_mode == "clarification_required":
+        missing = detect_missing_fields(query, session.pet_profile)
+        guidance, questions = generate_questions(llm, query, missing, route.intent)
+        text = guidance.strip() if guidance else "I need a few details to help."
+        return ChatResponse(
+            text=text,
+            follow_up_questions=questions,
+        )
+
+    if response_mode == "hybrid_partial":
+        missing = detect_missing_fields(query, session.pet_profile)
+        guidance, questions = generate_questions(llm, query, missing, route.intent)
+        prompt = compose_prompt("prompts/rag_prompt.txt", context=rag_text, question=query)
+        vet_response = _validate_llm_response(prompt, llm)
+        if citations:
+            vet_response.citations = validate_kb_citations(
+                citations, allowed_titles, min_similarity=0.75
             )
+        answer = format_vet_response(vet_response)
+        answer = apply_safety_guardrails(answer)
+        response = ChatResponse(
+            text=answer,
+            citations=[c.model_dump() for c in vet_response.citations],
+            follow_up_questions=questions,
+            vet_response=vet_response.model_dump(),
+        )
+        _response_cache.set(response_key, response)
+        return response
 
-    if config.live_search_enabled and _use_live_search(query, top_score, config.retrieval_confidence_threshold):
+    if response_mode == "live_search" and config.live_search_enabled:
         allowlist = load_domain_allowlist(config.domain_allowlist_path)
         try:
             results = live_search(
@@ -247,6 +315,19 @@ def chat(
             )
             _response_cache.set(query.lower(), response)
             return response
+
+    if response_mode == "live_search" and not config.live_search_enabled:
+        fallback_prompt = compose_prompt("prompts/fallback_prompt.txt", question=query)
+        vet_response = _validate_llm_response(fallback_prompt, llm)
+        answer = format_vet_response(vet_response)
+        answer = apply_safety_guardrails(answer)
+        response = ChatResponse(
+            text=answer,
+            citations=[],
+            vet_response=vet_response.model_dump(),
+        )
+        _response_cache.set(query.lower(), response)
+        return response
 
     prompt = compose_prompt("prompts/rag_prompt.txt", context=rag_text, question=query)
     vet_response = _validate_llm_response(prompt, llm)

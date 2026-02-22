@@ -13,9 +13,10 @@ RESPONSE STYLE:
 - Short paragraphs.
 - Structured output only.
 
-If information is missing, ask clarifying questions.
+If partial information is available, provide safe general guidance first.
+Ask clarifying questions only when missing details significantly affect safety or accuracy.
 If uncertain, say so.
 
-prompt_version = "MASTER_v1.0"
+prompt_version = "MASTER_v1.1"
 last_updated_date = "2026-02-22"
 owner = "vet-chat-core"

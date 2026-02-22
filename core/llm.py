@@ -26,10 +26,7 @@ class GeminiClient:
                 "Install with `pip install google-genai`."
             ) from exc
         self._types = types
-        self._client = genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(timeout=timeout_seconds),
-        )
+        self._client = genai.Client(api_key=api_key)
         self._model_name = model
         self._generation_config = types.GenerateContentConfig(
             temperature=temperature,
