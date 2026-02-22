@@ -108,19 +108,27 @@ def _validate_llm_response(prompt: str, llm: GeminiClient) -> VetResponse:
     return fallback_vet_response()
 
 
-def chat(query: str, session: SessionState, config: AppConfig) -> ChatResponse:
-    llm = GeminiClient(
+def chat(
+    query: str,
+    session: SessionState,
+    config: AppConfig,
+    llm_client=None,
+    embedder=None,
+    collection=None,
+) -> ChatResponse:
+    llm = llm_client or GeminiClient(
         config.gemini_api_key,
         config.gemini_model,
         config.llm_temperature,
         config.llm_max_tokens,
         config.llm_top_p,
     )
-    embedder = BGEEmbedder(config.bge_model)
-    try:
-        collection = get_collection(config.chroma_path)
-    except Exception as exc:
-        raise VectorDBError("Vector DB unavailable") from exc
+    embedder = embedder or BGEEmbedder(config.bge_model)
+    if collection is None:
+        try:
+            collection = get_collection(config.chroma_path)
+        except Exception as exc:
+            raise VectorDBError("Vector DB unavailable") from exc
 
     route = route_intent(
         query,

@@ -9,6 +9,9 @@ from core.config import load_config
 from core.response import VetResponse
 from core.session_store import SessionStore
 from core.errors import VetChatError
+from core.llm import GeminiClient
+from retrieval.embedding import BGEEmbedder
+from retrieval.vector_store import get_collection
 
 
 class ChatRequest(BaseModel):
@@ -45,8 +48,24 @@ def chat_endpoint(payload: ChatRequest) -> ChatResponseModel:
     session = _store.get(payload.session_id)
     if payload.pet_profile:
         session.pet_profile.update(payload.pet_profile)
+    llm = GeminiClient(
+        _config.gemini_api_key,
+        _config.gemini_model,
+        _config.llm_temperature,
+        _config.llm_max_tokens,
+        _config.llm_top_p,
+    )
+    embedder = BGEEmbedder(_config.bge_model)
+    collection = get_collection(_config.chroma_path)
     try:
-        response = chat(payload.message, session, _config)
+        response = chat(
+            payload.message,
+            session,
+            _config,
+            llm_client=llm,
+            embedder=embedder,
+            collection=collection,
+        )
     except VetChatError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     data = response.__dict__.copy()
