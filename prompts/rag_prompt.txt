@@ -9,6 +9,9 @@ PET TYPE (if known):
 CONTEXT FROM KNOWLEDGE BASE:
 {retrieved_context}
 
+QUERY CONTEXT:
+{query_context}
+
 CONVERSATION CONTEXT:
 {conversation_context}
 
@@ -17,6 +20,7 @@ INSTRUCTIONS:
 • Keep the response simple and reassuring.
 • Do not invent information not present in the context.
 • If the context is insufficient, say so and ask a clarifying question.
+• If the query is educational or academic, you may provide general dosage ranges but must not compute dose for a specific animal.
 
 FORMAT:
 

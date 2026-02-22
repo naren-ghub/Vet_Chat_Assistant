@@ -28,15 +28,32 @@ class GeminiClient:
         self._types = types
         self._client = genai.Client(api_key=api_key)
         self._model_name = model
+        self._temperature = temperature
+        self._top_p = top_p
+        self._max_tokens = max_tokens
         self._generation_config = types.GenerateContentConfig(
-            temperature=temperature,
-            top_p=top_p,
-            max_output_tokens=max_tokens,
+            temperature=self._temperature,
+            top_p=self._top_p,
+            max_output_tokens=self._max_tokens,
         )
 
-    def generate(self, prompt: str) -> str:
+    def generate(
+        self,
+        prompt: str,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> str:
         logger = get_logger("llm")
         last_exc = None
+        config = self._generation_config
+
+        if temperature is not None or max_tokens is not None or top_p is not None:
+            config = self._types.GenerateContentConfig(
+                temperature=self._temperature if temperature is None else temperature,
+                top_p=self._top_p if top_p is None else top_p,
+                max_output_tokens=self._max_tokens if max_tokens is None else max_tokens,
+            )
 
         for attempt in range(3):
             try:
@@ -44,7 +61,7 @@ class GeminiClient:
                 response = self._client.models.generate_content(
                     model=self._model_name,
                     contents=prompt,
-                    config=self._generation_config,
+                    config=config,
                 )
 
                 latency_ms = (time.time() - start) * 1000

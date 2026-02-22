@@ -1147,3 +1147,810 @@ System Output:
 END OF ARCHITECTURAL UPDATE - 1
 
 ---
+# 8. Hybrid Partial Response Mode – Architectural Amendment (v2.1)
+
+This section introduces a controlled Hybrid Partial Response Mode to resolve over-restrictive clarification behavior for general informational queries (e.g., vaccination schedules) while preserving medical safety.
+
+This amendment modifies behavior in the following layers:
+- 3.3 Chat Assistant Core (Routing Logic)
+- 3.5 Retrieval Confidence & Live Search Logic
+- 5.1 Master System Prompt
+- 5.3 Question Engine Prompt
+- 5.10 LLM Call Workflow Diagram
+
+No other architectural components are altered.
+
+---
+
+## 8.1 Amendment to 3.5 Retrieval Confidence & Live Search Logic
+
+### Updated Decision Matrix
+
+| top_score | Intent Type | Action |
+|------------|-------------|--------|
+| > 0.82 | Any | FULL_RAG |
+| 0.70–0.82 | vaccination / pet_care / general_info | HYBRID_PARTIAL |
+| 0.70–0.82 | symptom_inquiry | CLARIFICATION_REQUIRED |
+| < 0.70 | Any | LIVE_SEARCH |
+
+---
+
+## 8.2 Amendment to 3.3 Chat Assistant Core (Routing Engine)
+
+```
+def determine_response_mode(intent, retrieval_score, emergency_score):
+
+    if emergency_score >= EMERGENCY_THRESHOLD:
+        return "EMERGENCY"
+
+    if retrieval_score > 0.82:
+        return "FULL_RAG"
+
+    if 0.70 <= retrieval_score <= 0.82:
+        if intent in ["vaccination", "pet_care", "general_info"]:
+            return "HYBRID_PARTIAL"
+        if intent == "symptom_inquiry":
+            return "CLARIFICATION_REQUIRED"
+
+    return "LIVE_SEARCH"
+```
+
+Routing Replacement:
+
+```
+response_mode = determine_response_mode(intent, retrieval_score, emergency_score)
+
+if response_mode == "FULL_RAG":
+    return rag_flow(preprocessed)
+
+if response_mode == "HYBRID_PARTIAL":
+    answer = rag_flow(preprocessed)
+    questions = clarification_flow(preprocessed)
+    return merge(answer, questions)
+
+if response_mode == "CLARIFICATION_REQUIRED":
+    return clarification_flow(preprocessed)
+
+if response_mode == "LIVE_SEARCH":
+    return live_search_flow(preprocessed)
+```
+
+---
+
+## 8.3 Amendment to 5.1 Master System Prompt
+
+Replace:
+
+"If information is missing, ask clarifying questions."
+
+With:
+
+"If partial information is available, provide safe general guidance first.
+Ask clarifying questions only when missing details significantly affect safety or accuracy."
+
+---
+
+## 8.4 Amendment to 5.3 Question Engine Prompt
+
+Replace:
+
+"Do not provide medical advice yet."
+
+With:
+
+"Only avoid providing guidance if missing information prevents safe advice.
+If safe general guidance is possible, provide it before asking clarifications."
+
+---
+
+## 8.5 Amendment to 5.10 LLM Call Workflow Diagram
+
+```mermaid
+flowchart TD
+
+    INPUT[User Input] --> CHECK[Emergency Check]
+    CHECK -->|High| EMERG_PROMPT[Emergency Prompt]
+    CHECK -->|Normal| RETRIEVE[Retrieval Confidence Check]
+
+    RETRIEVE -->|High| RAG_PROMPT
+    RETRIEVE -->|Medium + Informational| HYBRID_FLOW
+    RETRIEVE -->|Medium + Symptom| QUESTION_PROMPT
+    RETRIEVE -->|Low| LIVE_SEARCH
+
+    HYBRID_FLOW --> RAG_PROMPT
+    HYBRID_FLOW --> QUESTION_PROMPT
+
+    RAG_PROMPT --> LLM
+    QUESTION_PROMPT --> LLM
+    EMERG_PROMPT --> LLM
+    LIVE_SEARCH --> LIVE_PROMPT
+    LIVE_PROMPT --> LLM
+
+    LLM --> VALIDATE[Structured Output Validation]
+```
+
+---
+
+## 8.6 Safety Preservation Rule
+
+HYBRID_PARTIAL mode is prohibited when:
+- emergency_score >= threshold
+- dosage-related queries
+- toxic exposure queries
+- seizure / collapse / respiratory distress indicators
+
+---
+
+## 8.7 Expected Behavioral Outcome
+
+Example Query:
+"3 month old cat vaccination schedule"
+
+System Output:
+- Explanation of vaccination
+- General kitten vaccination schedule
+- Follow-up questions about prior doses
+- Indoor/outdoor status clarification
+
+---
+
+END OF ARCHITECTURAL AMENDMENT v2.1
+
+---
+
+# 9. Corrective Amendment – Hybrid Partial Response (Append-Only Update)
+
+This section appends precise behavioral modifications without rewriting any previously documented layer content.
+
+The following layers are amended:
+- 3.3 Chat Assistant Core
+- 3.5 Retrieval Confidence & Live Search Logic
+- 5.1 Master System Prompt
+- 5.3 Question Engine Prompt
+- 5.10 LLM Call Workflow Diagram
+
+No structural relocation or deletion of existing documentation is performed.
+
+---
+
+## 9.1 Modification to Layer 3.5 (Retrieval Confidence Logic)
+
+Replace the existing medium-confidence action:
+
+"0.70–0.82 → Ask clarification"
+
+With conditional routing:
+
+If 0.70–0.82 AND intent in [vaccination, pet_care, general_info]
+→ HYBRID_PARTIAL
+
+If 0.70–0.82 AND intent == symptom_inquiry
+→ CLARIFICATION_REQUIRED
+
+All other thresholds remain unchanged.
+
+---
+
+## 9.2 Modification to Layer 3.3 (Routing Logic)
+
+Introduce response_mode evaluation before clarification routing.
+
+Add logical evaluation:
+
+- FULL_RAG
+- HYBRID_PARTIAL
+- CLARIFICATION_REQUIRED
+- LIVE_SEARCH
+
+HYBRID_PARTIAL must:
+1. Execute rag_flow()
+2. Execute clarification question generation
+3. Merge outputs
+4. Return structured answer + follow_up_questions
+
+Remove any direct unconditional routing to clarification_flow based solely on medium confidence.
+
+---
+
+## 9.3 Modification to Layer 5.1 (Master System Prompt)
+
+Replace:
+"If information is missing, ask clarifying questions."
+
+With:
+"If partial information is available, provide safe general guidance first. Ask clarifying questions only when missing details significantly affect safety or accuracy."
+
+---
+
+## 9.4 Modification to Layer 5.3 (Question Engine Prompt)
+
+Replace:
+"Do not provide medical advice yet."
+
+With:
+"Only avoid providing guidance if missing information prevents safe advice. If safe general guidance is possible, provide it before asking clarifications."
+
+---
+
+## 9.5 Modification to Layer 5.10 (LLM Workflow)
+
+Update medium-confidence branch to:
+
+Medium + Informational Intent → HYBRID_FLOW
+Medium + Symptom Intent → QUESTION_PROMPT
+
+HYBRID_FLOW executes:
+- RAG_PROMPT
+- QUESTION_PROMPT
+- Merge before validation
+
+---
+
+## 9.6 Safety Constraint
+
+HYBRID_PARTIAL is prohibited when:
+- emergency_score ≥ threshold
+- dosage-related queries
+- toxic exposure
+- respiratory distress, seizure, collapse
+
+Emergency and high-risk overrides remain unchanged.
+
+---
+
+END OF CORRECTIVE APPEND UPDATE
+
+
+
+---
+
+# Architecture Update - 2
+
+# 9. Response Style Switching – Educational vs Clinical Mode
+
+This amendment introduces a Response Style Layer that separates:
+
+- Clinical Structured Responses  
+- Educational Natural Responses  
+
+This ensures general conceptual queries are answered in a user-friendly conversational format, while sensitive or case-specific queries remain strictly structured and retrieval-grounded.
+
+This amendment modifies behavior in the following layers:
+
+- 3.3 Chat Assistant Core (Routing Logic)
+- 3.7 LLM Invocation Architecture
+- 3.8 Structured Output Validation
+- 5.1 Master System Prompt
+- 5.10 LLM Call Workflow Diagram
+
+No other architectural components are altered.
+
+---
+
+## 9.1 New Concept: Response Style Classification
+
+Introduce a new independent decision:
+
+```
+response_style = determine_response_style(intent, query, emergency_score)
+```
+
+This operates independently from `response_mode`.
+
+---
+
+## 9.2 Educational Style Trigger Conditions
+
+Educational style MUST activate when:
+
+- intent in ["vaccination", "pet_care", "general_info"]
+- emergency_score < threshold
+- NOT dosage-related
+- NOT toxic exposure related
+- NOT symptom-specific
+- Query is conceptual (starts with: why, what, how, explain, tell me about)
+
+Example conceptual starters:
+
+```
+("why", "what", "how", "explain", "tell me about")
+```
+
+If conditions satisfied:
+
+```
+return "EDUCATIONAL"
+```
+
+Else:
+
+```
+return "CLINICAL"
+```
+
+---
+
+## 9.3 Modification to Layer 3.3 (Chat Assistant Core)
+
+After determining `response_mode`, also determine:
+
+```
+response_style = determine_response_style(intent, query, emergency_score)
+```
+
+Routing logic becomes two-dimensional:
+
+- response_mode (full_rag / hybrid_partial / clarification / live_search)
+- response_style (educational / clinical)
+
+If:
+
+```
+response_style == "EDUCATIONAL"
+```
+
+Then:
+
+- Skip structured RAG template formatting
+- Skip VetResponse schema validation
+- Generate natural explanation
+- Do NOT enforce section headers (Answer, Possible Causes, etc.)
+- Optionally append gentle follow-up question
+
+If:
+
+```
+response_style == "CLINICAL"
+```
+
+Then existing structured flow remains unchanged.
+
+---
+
+## 9.4 Educational Response Execution Rules
+
+When response_style == "EDUCATIONAL":
+
+1. Use a new prompt template:  
+   `prompts/educational_prompt.txt`
+
+2. Do NOT use structured format sections.
+3. Do NOT force:
+   - Possible Causes
+   - Warning Signs
+   - When to See a Vet
+   - Care Tips
+4. Return plain conversational text.
+5. Optionally include a single friendly follow-up question.
+
+Educational responses must NOT require high retrieval similarity threshold.
+
+Retrieval may optionally be used, but confidence failure must NOT block explanation.
+
+---
+
+## 9.5 Amendment to 3.7 LLM Invocation Architecture
+
+Add new LLM call type:
+
+6. Educational Concept Explanation
+
+Configuration:
+
+- Temperature: 0.4
+- Max tokens: 600
+- No structured output enforcement
+
+This mode bypasses structured schema validation.
+
+---
+
+## 9.6 Amendment to 3.8 Structured Output Validation
+
+Structured schema validation applies ONLY when:
+
+```
+response_style == "CLINICAL"
+```
+
+Educational responses bypass VetResponse schema validation.
+
+They return:
+
+```
+ChatResponse(
+    text: str,
+    follow_up_questions: optional,
+    citations: optional
+)
+```
+
+No mandatory structured fields.
+
+---
+
+## 9.7 Amendment to 5.1 Master System Prompt
+
+Add:
+
+```
+If the query is general and conceptual (educational in nature),
+respond in a natural, conversational style without structured medical sections.
+
+Use structured clinical format only for case-specific or health-risk queries.
+```
+
+---
+
+## 9.8 Amendment to 5.10 LLM Workflow Diagram
+
+```mermaid
+flowchart TD
+
+    INPUT[User Input] --> CHECK[Emergency Check]
+    CHECK -->|High| EMERG_PROMPT
+
+    CHECK -->|Normal| STYLE[Determine Response Style]
+
+    STYLE -->|Educational| EDUCATIONAL_PROMPT
+    STYLE -->|Clinical| RETRIEVE
+
+    RETRIEVE -->|High| RAG_PROMPT
+    RETRIEVE -->|Medium + Informational| HYBRID_FLOW
+    RETRIEVE -->|Medium + Symptom| QUESTION_PROMPT
+    RETRIEVE -->|Low| LIVE_SEARCH
+
+    EDUCATIONAL_PROMPT --> LLM
+
+    RAG_PROMPT --> LLM
+    QUESTION_PROMPT --> LLM
+    LIVE_SEARCH --> LIVE_PROMPT
+    LIVE_PROMPT --> LLM
+
+    LLM --> VALIDATE[Structured Validation if Clinical Only]
+```
+
+---
+
+## 9.9 Safety Preservation Rule
+
+Educational mode is strictly prohibited when:
+
+- emergency_score ≥ threshold
+- dosage-related queries
+- toxic exposure
+- symptom-specific clinical assessment
+- lab value interpretation
+- medication advice
+
+In such cases, system must revert to CLINICAL structured flow.
+
+---
+
+## 9.10 Expected Behavioral Outcome
+
+Query:
+"Why do we vaccinate animals?"
+
+System Output:
+
+- Explanation of what vaccines are
+- Why vaccination is important
+- How schedules vary by species and age
+- Friendly follow-up question
+- No structured medical sections
+
+Query:
+"My dog has vomiting and diarrhea."
+
+System Output:
+
+- Structured clinical response
+- Warning signs
+- Vet guidance
+- Citations if applicable
+
+---
+
+END OF ARCHITECTURAL UPDATE - 2
+
+------
+
+# Architecture Update - 3
+
+# 10. Context-Aware Academic vs Clinical Restriction Model
+
+This amendment corrects a foundational architectural limitation: the system previously assumed all dosage and treatment queries occur in a clinical context.
+
+The updated model introduces Context Classification to distinguish between:
+
+- ACADEMIC (educational / veterinary student intent)
+- GENERAL (conceptual, non-case-specific)
+- CLINICAL\_SPECIFIC (active pet-specific medical scenario)
+
+This ensures dosage and treatment information can be explained safely in academic/general contexts while remaining restricted in pet-specific cases.
+
+This amendment modifies behavior in the following layers:
+
+- 3.3 Chat Assistant Core (Orchestration Engine)
+- 3.4 Hybrid Intent Detection Engine
+- 3.7 LLM Invocation Architecture
+- 3.8 Structured Output Validation
+- 3.9 Emergency Detection Engine
+- 5.1 Master System Prompt
+- 5.2 RAG Prompt
+- 5.6 Fallback General Guidance Prompt
+- 5.10 LLM Workflow Diagram
+
+No previously defined safety guarantees are removed. Restrictions are now context-dependent rather than keyword-only.
+
+---
+
+## 10.1 New Layer: Query Context Classification
+
+Before determining response\_mode or response\_style, introduce:
+
+```
+query_context = determine_query_context(query, pet_profile)
+```
+
+Return one of:
+
+- "ACADEMIC"
+- "GENERAL"
+- "CLINICAL\_SPECIFIC"
+
+This classification operates independently of intent and retrieval confidence.
+
+---
+
+## 10.2 Context Classification Rules
+
+### CLINICAL\_SPECIFIC
+
+Trigger if ANY of the following are detected:
+
+- Mentions "my dog", "my cat", "my puppy", etc.
+- Includes weight (kg, lbs)
+- Includes age of specific pet
+- Describes active symptoms
+- Requests calculation ("how much should I give")
+- Time-sensitive framing ("right now", "immediately")
+
+This context implies real-world application risk.
+
+---
+
+### ACADEMIC
+
+Trigger if:
+
+- No specific pet described
+- No weight or age mentioned
+- No active symptoms
+- Phrases such as:
+  - "standard dosage"
+  - "usual dose"
+  - "recommended mg/kg"
+  - "in veterinary medicine"
+  - "for academic purpose"
+
+This context implies informational learning.
+
+---
+
+### GENERAL
+
+Trigger if:
+
+- Conceptual question
+- No specific pet
+- No real-time medical scenario
+
+Example: "How does amoxicillin work in dogs?"
+
+---
+
+## 10.3 Dosage & Treatment Handling Matrix
+
+Replace previous binary restriction rule.
+
+New logic:
+
+```
+if dosage_pattern and query_context == "CLINICAL_SPECIFIC":
+    enforce_strict_clinical_restriction()
+
+elif dosage_pattern and query_context in {"ACADEMIC", "GENERAL"}:
+    allow_general_range_only()
+    prohibit_specific_calculation()
+```
+
+---
+
+### Allowed in ACADEMIC / GENERAL:
+
+- Provide standard mg/kg range
+- Explain therapeutic indications
+- Explain mechanism of action
+- Include safety note that dosing must be determined by veterinarian
+
+### Prohibited in ACADEMIC / GENERAL:
+
+- Calculating dose for specific weight
+- Giving step-by-step treatment plan for specific case
+
+---
+
+## 10.4 Modification to Layer 3.3 (Chat Assistant Core)
+
+Update orchestration pseudocode:
+
+```
+preprocessed = preprocess(message)
+intent, confidence = detect_intent(preprocessed)
+emergency_score = compute_emergency_score(preprocessed)
+query_context = determine_query_context(preprocessed, session.pet_profile)
+response_style = determine_response_style(intent, preprocessed, emergency_score)
+response_mode = determine_response_mode(intent, retrieval_score, emergency_score)
+```
+
+Safety gating must now evaluate BOTH:
+
+- query\_context
+- dosage\_pattern
+- emergency\_score
+
+---
+
+## 10.5 Structured vs Educational Output Refinement
+
+Educational responses must now support structured narrative formatting.
+
+Instead of rigid schema blocks, educational responses should use soft structured sections:
+
+Recommended structure for educational responses:
+
+- "What it is"
+- "Why it matters"
+- "How it works"
+- "Differences by species or age"
+- "General dosage range" (if applicable)
+- Gentle follow-up question
+
+This preserves clarity while remaining user-friendly.
+
+---
+
+## 10.6 Amendment to 3.7 LLM Invocation Architecture
+
+Add new LLM call subtype:
+
+7. Educational Academic Explanation with Controlled Dosage Range
+
+Configuration:
+
+- Temperature: 0.35–0.45
+- Max tokens: 700
+- Structured narrative guidance
+- Explicit prohibition of individualized dosing
+
+---
+
+## 10.7 Amendment to 3.8 Structured Output Validation
+
+Structured VetResponse schema remains mandatory ONLY for:
+
+- CLINICAL\_SPECIFIC context
+- Symptom-based queries
+- Lab interpretation
+- Emergency scenarios
+
+Educational and Academic contexts bypass strict schema.
+
+However:
+
+Educational responses must still pass:
+
+- Injection protection validation
+- Citation validation if retrieval used
+- Safety keyword audit
+
+---
+
+## 10.8 Amendment to 3.9 Emergency Detection
+
+Emergency override remains absolute.
+
+Even in ACADEMIC context:
+
+If emergency\_score ≥ threshold → EMERGENCY flow overrides all other context.
+
+---
+
+## 10.9 Amendment to 5.1 Master System Prompt
+
+Add:
+
+```
+The system serves both educational and clinical support purposes.
+
+If the query is academic or general and not tied to a specific pet case,
+you may explain dosage ranges and treatment principles in general terms.
+
+Never calculate or prescribe medication amounts for a specific animal.
+
+If the query involves a specific pet and treatment decision,
+follow strict clinical structured mode.
+```
+
+---
+
+## 10.10 Amendment to 5.2 RAG Prompt
+
+Add instruction:
+
+```
+If the query is educational or academic in nature,
+you may provide general dosage ranges but must not compute dose for a specific animal.
+```
+
+---
+
+## 10.11 Amendment to 5.6 Fallback General Guidance Prompt
+
+Update:
+
+Remove hard prohibition of dosage mention.
+
+Replace with:
+
+```
+You may explain standard dosage ranges in general educational context.
+Do not calculate or prescribe individualized dosing.
+```
+
+---
+
+## 10.12 Updated Workflow Diagram
+
+```mermaid
+flowchart TD
+
+    INPUT --> CHECK_EMERGENCY
+    CHECK_EMERGENCY -->|High| EMERG_PROMPT
+    CHECK_EMERGENCY -->|Normal| CONTEXT
+
+    CONTEXT --> STYLE
+    STYLE --> RETRIEVE
+
+    RETRIEVE --> RESPONSE_MODE
+    RESPONSE_MODE --> LLM_CALL
+
+    LLM_CALL --> VALIDATE
+```
+
+Where VALIDATE applies structured schema only if:
+
+```
+query_context == "CLINICAL_SPECIFIC"
+```
+
+---
+
+## 10.13 Safety Guarantees Preserved
+
+The updated architecture guarantees:
+
+✔ No individualized dosage hallucinations\
+✔ No emergency override bypass\
+✔ Academic dosage explanation allowed\
+✔ Clinical-specific dosing restricted\
+✔ Structured medical formatting preserved where required\
+✔ Educational conversational tone enabled where appropriate
+
+---
+
+END OF ARCHITECTURE UPDATE - 3
+
+

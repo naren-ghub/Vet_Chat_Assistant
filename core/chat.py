@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List
 
 import json
+import re
 
 from core.cache import TTLCache
 from core.config import AppConfig, load_domain_allowlist
@@ -47,6 +48,39 @@ _TOXIC_KEYWORDS = {
     "raisins",
     "antifreeze",
 }
+_SYMPTOM_KEYWORDS = {
+    "vomit",
+    "vomiting",
+    "diarrhea",
+    "lethargic",
+    "lethargy",
+    "not eating",
+    "no appetite",
+    "cough",
+    "sneeze",
+    "fever",
+    "bleeding",
+    "pain",
+    "swollen",
+}
+_ACADEMIC_PHRASES = {
+    "standard dosage",
+    "usual dose",
+    "recommended mg/kg",
+    "in veterinary medicine",
+    "for academic",
+    "for study",
+    "textbook",
+}
+_CONCEPTUAL_STARTS = (
+    "why",
+    "what",
+    "how",
+    "explain",
+    "tell me about",
+)
+_WEIGHT_PATTERN = re.compile(r"\b\d+(\.\d+)?\s*(kg|kgs|lb|lbs|pounds)\b", re.I)
+_AGE_PATTERN = re.compile(r"\b\d+\s*(week|weeks|month|months|year|years)\b", re.I)
 
 
 def _build_filter_key(session: SessionState) -> str:
@@ -121,12 +155,27 @@ def _format_live_search_results(results) -> str:
     return "\n".join(lines)
 
 
-def _llm_generate(llm: GeminiClient, prompt: str) -> str:
-    cached = _llm_cache.get(prompt)
+def _llm_generate(
+    llm: GeminiClient,
+    prompt: str,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    top_p: float | None = None,
+) -> str:
+    cache_key = json.dumps(
+        {
+            "prompt": prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p,
+        },
+        sort_keys=True,
+    )
+    cached = _llm_cache.get(cache_key)
     if cached:
         return cached
-    text = llm.generate(prompt)
-    _llm_cache.set(prompt, text)
+    text = llm.generate(prompt, temperature=temperature, max_tokens=max_tokens, top_p=top_p)
+    _llm_cache.set(cache_key, text)
     return text
 
 
@@ -150,6 +199,53 @@ def _validate_llm_response(prompt: str, llm: GeminiClient) -> VetResponse:
     if parsed:
         return parsed
     return fallback_vet_response()
+
+
+def _determine_query_context(query: str, pet_profile: dict) -> str:
+    lowered = query.lower()
+    if any(tag in lowered for tag in ["my dog", "my cat", "my puppy", "my kitten", "my pet"]):
+        return "CLINICAL_SPECIFIC"
+    if _WEIGHT_PATTERN.search(query):
+        return "CLINICAL_SPECIFIC"
+    if _AGE_PATTERN.search(query) and "old" in lowered:
+        return "CLINICAL_SPECIFIC"
+    if any(keyword in lowered for keyword in _SYMPTOM_KEYWORDS):
+        return "CLINICAL_SPECIFIC"
+    if any(keyword in lowered for keyword in ["right now", "immediately", "asap", "today"]):
+        return "CLINICAL_SPECIFIC"
+    if any(keyword in lowered for keyword in ["how much should i give", "dose for", "dosage for"]):
+        return "CLINICAL_SPECIFIC"
+    if pet_profile.get("age") or pet_profile.get("weight"):
+        return "CLINICAL_SPECIFIC"
+    if any(phrase in lowered for phrase in _ACADEMIC_PHRASES):
+        return "ACADEMIC"
+    return "GENERAL"
+
+
+def _determine_response_style(
+    intent: str,
+    query: str,
+    emergency_score_value: float,
+    emergency_threshold: float,
+    query_context: str,
+) -> str:
+    lowered = query.lower()
+    if emergency_score_value >= emergency_threshold:
+        return "clinical"
+    if query_context == "CLINICAL_SPECIFIC":
+        return "clinical"
+    if intent not in {"vaccination", "pet_care", "general_info"}:
+        return "clinical"
+    if any(keyword in lowered for keyword in _SYMPTOM_KEYWORDS):
+        return "clinical"
+    if any(keyword in lowered for keyword in _TOXIC_KEYWORDS):
+        return "clinical"
+    if DOSAGE_PATTERN.search(query) and query_context == "CLINICAL_SPECIFIC":
+        return "clinical"
+    stripped = lowered.strip()
+    if any(stripped.startswith(starter) for starter in _CONCEPTUAL_STARTS):
+        return "educational"
+    return "clinical"
 
 
 def chat(
@@ -183,7 +279,8 @@ def chat(
         config.intent_high_threshold,
         config.intent_medium_threshold,
     )
-    _logger.info("emergency_score=%.2f", emergency_score(query))
+    emergency_score_value = emergency_score(query)
+    _logger.info("emergency_score=%.2f", emergency_score_value)
     session.last_intent = route.intent
     _logger.info("intent=%s confidence=%.2f route=%s", route.intent, route.confidence, route.route)
 
@@ -206,8 +303,15 @@ def chat(
             vet_response=vet_response.model_dump(),
         )
 
+    query_context = _determine_query_context(query, session.pet_profile)
+    response_style = _determine_response_style(
+        route.intent, query, emergency_score_value, config.emergency_threshold, query_context
+    )
     profile_key = json.dumps(session.pet_profile, sort_keys=True, default=str)
-    response_key = f"{query.lower()}|{profile_key}|{session.last_intent or ''}"
+    response_key = (
+        f"{query.lower()}|{profile_key}|{session.last_intent or ''}|"
+        f"{query_context}|{response_style}"
+    )
     cached_response = _response_cache.get(response_key)
     if cached_response:
         return cached_response
@@ -234,7 +338,6 @@ def chat(
     distances = retrieval.get("distances", [[]])[0]
     top_score = 1.0 - (min(distances) if distances else 1.0)
     _logger.info("retrieval_top_score=%.2f", top_score)
-    emergency_score_value = emergency_score(query)
     hybrid_allowed = _hybrid_allowed(query, config.emergency_threshold)
     response_mode = _determine_response_mode(
         route.intent,
@@ -248,6 +351,52 @@ def chat(
     if config.live_search_enabled and force_live_search:
         response_mode = "live_search"
 
+    if response_style == "educational":
+        if config.live_search_enabled and force_live_search:
+            allowlist = load_domain_allowlist(config.domain_allowlist_path)
+            try:
+                results = live_search(
+                    query,
+                    api_key=config.serper_api_key,
+                    allowlist=allowlist,
+                    endpoint=config.serper_endpoint,
+                )
+            except LiveSearchError:
+                results = []
+            live_summary = _format_live_search_results(results)
+            if live_summary:
+                rag_text = f"{rag_text}\n\n{live_summary}"
+                citations.extend(
+                    [
+                        {
+                            "source_title": r.title,
+                            "organization": r.source_domain,
+                            "publication_year": None,
+                            "section_reference": "",
+                            "url": r.link,
+                        }
+                        for r in results[:5]
+                    ]
+                )
+        prompt = compose_prompt(
+            "prompts/educational_prompt.txt",
+            question=query,
+            context=rag_text,
+            query_context=query_context,
+        )
+        text = _llm_generate(llm, prompt, temperature=0.4, max_tokens=600)
+        validated_citations = (
+            validate_kb_citations(citations, allowed_titles, min_similarity=0.75)
+            if citations
+            else []
+        )
+        response = ChatResponse(
+            text=text,
+            citations=[c.model_dump() for c in validated_citations],
+        )
+        _response_cache.set(response_key, response)
+        return response
+
     if response_mode == "clarification_required":
         missing = detect_missing_fields(query, session.pet_profile)
         guidance, questions = generate_questions(llm, query, missing, route.intent)
@@ -260,7 +409,14 @@ def chat(
     if response_mode == "hybrid_partial":
         missing = detect_missing_fields(query, session.pet_profile)
         guidance, questions = generate_questions(llm, query, missing, route.intent)
-        prompt = compose_prompt("prompts/rag_prompt.txt", context=rag_text, question=query)
+        prompt = compose_prompt(
+            "prompts/rag_prompt.txt",
+            user_question=query,
+            retrieved_context=rag_text,
+            pet_type=session.pet_profile.get("species", ""),
+            conversation_context="",
+            query_context=query_context,
+        )
         vet_response = _validate_llm_response(prompt, llm)
         if citations:
             vet_response.citations = validate_kb_citations(
@@ -304,7 +460,11 @@ def chat(
                 ]
             )
         else:
-            fallback_prompt = compose_prompt("prompts/fallback_prompt.txt", question=query)
+            fallback_prompt = compose_prompt(
+                "prompts/fallback_prompt.txt",
+                question=query,
+                query_context=query_context,
+            )
             vet_response = _validate_llm_response(fallback_prompt, llm)
             answer = format_vet_response(vet_response)
             answer = apply_safety_guardrails(answer)
@@ -317,7 +477,11 @@ def chat(
             return response
 
     if response_mode == "live_search" and not config.live_search_enabled:
-        fallback_prompt = compose_prompt("prompts/fallback_prompt.txt", question=query)
+        fallback_prompt = compose_prompt(
+            "prompts/fallback_prompt.txt",
+            question=query,
+            query_context=query_context,
+        )
         vet_response = _validate_llm_response(fallback_prompt, llm)
         answer = format_vet_response(vet_response)
         answer = apply_safety_guardrails(answer)
@@ -329,7 +493,14 @@ def chat(
         _response_cache.set(query.lower(), response)
         return response
 
-    prompt = compose_prompt("prompts/rag_prompt.txt", context=rag_text, question=query)
+    prompt = compose_prompt(
+        "prompts/rag_prompt.txt",
+        user_question=query,
+        retrieved_context=rag_text,
+        pet_type=session.pet_profile.get("species", ""),
+        conversation_context="",
+        query_context=query_context,
+    )
     vet_response = _validate_llm_response(prompt, llm)
     if citations:
         vet_response.citations = validate_kb_citations(

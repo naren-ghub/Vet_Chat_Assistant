@@ -84,3 +84,12 @@
 - Updated: master and question prompts for partial guidance before clarifications.
 - Updated: question engine to parse JSON guidance + questions.
 - Tests: Added hybrid partial, live search override, and hybrid block tests; all tests passing.
+
+## 2026-02-22 16:18 - Implement Educational Style + Context-Aware Dosage
+- Scope: Apply Architecture Updates 2 and 3 (educational vs clinical, context-aware dosing).
+- Added: query_context classification (ACADEMIC/GENERAL/CLINICAL_SPECIFIC).
+- Added: response_style routing with educational prompt for conceptual informational queries.
+- Added: educational prompt and context-aware dosage guidance rules.
+- Updated: rag and fallback prompts with query_context handling.
+- Updated: LLM client to support per-call generation overrides.
+- Tests: Added educational response style test; full suite passing.

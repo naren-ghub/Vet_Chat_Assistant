@@ -7,7 +7,7 @@ class DummyLLM:
     def __init__(self):
         self.calls = []
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, **kwargs) -> str:
         self.calls.append(prompt)
         return (
             '{'
@@ -362,3 +362,52 @@ def test_hybrid_blocked_by_toxic(monkeypatch):
     response = chat("is xylitol toxic to dogs", session, cfg)
     assert response.text == "I need a few details to help."
     assert response.follow_up_questions
+
+
+def test_educational_response_style(monkeypatch):
+    chat_module = _chat_module()
+
+    class EduLLM:
+        def generate(self, prompt: str, **kwargs) -> str:
+            return "Educational response."
+
+    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: EduLLM())
+    monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
+    monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
+    monkeypatch.setattr(
+        chat_module,
+        "query_collection",
+        lambda *args, **kwargs: {
+            "documents": [["ctx"]],
+            "metadatas": [[{"source_title": "WSAVA"}]],
+            "distances": [[0.9]],
+        },
+    )
+    from core.types import RouteDecision
+    monkeypatch.setattr(chat_module, "route_intent", lambda *args, **kwargs: RouteDecision("general_info", 0.9, "medical_query"))
+
+    cfg = AppConfig(
+        gemini_api_key="x",
+        gemini_model="m",
+        llm_temperature=0.2,
+        llm_max_tokens=512,
+        llm_top_p=0.9,
+        llm_timeout_seconds=5,
+        bge_model="b",
+        chroma_path="data/chroma",
+        serper_api_key="s",
+        serper_endpoint="http://example",
+        domain_allowlist_path="domain.txt",
+        chunk_size=800,
+        chunk_overlap=160,
+        top_k=5,
+        retrieval_confidence_threshold=0.7,
+        intent_high_threshold=0.82,
+        intent_medium_threshold=0.65,
+        emergency_threshold=8.0,
+        live_search_enabled=False,
+    )
+    session = SessionState(session_id="s7")
+    response = chat("why do we vaccinate animals", session, cfg)
+    assert response.text == "Educational response."
+    assert response.follow_up_questions == []

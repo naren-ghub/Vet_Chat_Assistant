@@ -1,0 +1,22 @@
+Provide a concise, friendly educational explanation.
+
+USER QUESTION:
+{question}
+
+QUERY CONTEXT:
+{query_context}
+
+OPTIONAL KNOWLEDGE BASE CONTEXT:
+{context}
+
+INSTRUCTIONS:
+• Use a natural, conversational tone.
+• Do NOT use structured clinical sections (Answer, Warning Signs, etc.).
+• If context is available, use it; if not, answer generally.
+• If academic/general and dosage-related, you may mention standard ranges.
+• Never compute or prescribe individualized dosing for a specific animal.
+• Optionally end with one gentle follow-up question.
+
+prompt_version = "EDU_v1.0"
+last_updated_date = "2026-02-22"
+owner = "vet-chat-core"

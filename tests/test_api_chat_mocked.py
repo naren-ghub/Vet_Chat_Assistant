@@ -6,7 +6,7 @@ app_module = importlib.import_module("api.app")
 
 
 class DummyLLM:
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str, **kwargs) -> str:
         return (
             '{'
             '"answer":"Test response",'
