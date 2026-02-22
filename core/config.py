@@ -17,6 +17,7 @@ class AppConfig:
     llm_temperature: float
     llm_max_tokens: int
     llm_top_p: float
+    llm_timeout_seconds: float
     bge_model: str
     chroma_path: str
     serper_api_key: str
@@ -48,6 +49,7 @@ def load_config() -> AppConfig:
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.2")),
         llm_max_tokens=int(os.getenv("LLM_MAX_TOKENS", "512")),
         llm_top_p=float(os.getenv("LLM_TOP_P", "0.9")),
+        llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "30")),
         bge_model=os.getenv("BGE_MODEL", "BAAI/bge-base-en-v1.5"),
         chroma_path=os.getenv("CHROMA_PATH", "data/chroma"),
         serper_api_key=_env("SERPER_API_KEY"),

@@ -54,6 +54,7 @@ def chat_endpoint(payload: ChatRequest) -> ChatResponseModel:
         _config.llm_temperature,
         _config.llm_max_tokens,
         _config.llm_top_p,
+        _config.llm_timeout_seconds,
     )
     embedder = BGEEmbedder(_config.bge_model)
     collection = get_collection(_config.chroma_path)

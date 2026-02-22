@@ -122,6 +122,7 @@ def chat(
         config.llm_temperature,
         config.llm_max_tokens,
         config.llm_top_p,
+        config.llm_timeout_seconds,
     )
     embedder = embedder or BGEEmbedder(config.bge_model)
     if collection is None:

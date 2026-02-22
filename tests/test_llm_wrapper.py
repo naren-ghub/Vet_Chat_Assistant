@@ -22,24 +22,38 @@ class DummyModel:
         return DummyResponse(text="response")
 
 
-def _install_fake_genai(model):
-    fake = types.SimpleNamespace()
-    fake.configure = lambda api_key=None: None
-    fake.GenerativeModel = lambda name: model
-    sys.modules["google.generativeai"] = fake
+class DummyClient:
+    def __init__(self, model):
+        self.models = types.SimpleNamespace(
+            generate_content=lambda **kwargs: model.generate_content(
+                kwargs.get("contents"), kwargs.get("config")
+            )
+        )
 
 
-def test_llm_generate_success():
+def _install_fake_genai(monkeypatch, model):
+    types_mod = types.SimpleNamespace(
+        HttpOptions=lambda **kwargs: kwargs,
+        GenerateContentConfig=lambda **kwargs: kwargs,
+    )
+    genai_mod = types.SimpleNamespace(Client=lambda **kwargs: DummyClient(model), types=types_mod)
+    google_mod = types.SimpleNamespace(genai=genai_mod)
+    monkeypatch.setitem(sys.modules, "google", google_mod)
+    monkeypatch.setitem(sys.modules, "google.genai", genai_mod)
+    monkeypatch.setitem(sys.modules, "google.genai.types", types_mod)
+
+
+def test_llm_generate_success(monkeypatch):
     model = DummyModel()
-    _install_fake_genai(model)
-    client = GeminiClient("key", "model", 0.2, 256, 0.9)
+    _install_fake_genai(monkeypatch, model)
+    client = GeminiClient("key", "model", 0.2, 256, 0.9, 5)
     assert client.generate("hi") == "response"
     assert model.calls == 1
 
 
-def test_llm_generate_retries():
+def test_llm_generate_retries(monkeypatch):
     model = DummyModel(fail_times=2)
-    _install_fake_genai(model)
-    client = GeminiClient("key", "model", 0.2, 256, 0.9)
+    _install_fake_genai(monkeypatch, model)
+    client = GeminiClient("key", "model", 0.2, 256, 0.9, 5)
     assert client.generate("hi") == "response"
     assert model.calls == 3

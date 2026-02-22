@@ -3,11 +3,8 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Optional
 
-from core.logging import get_logger
 from core.errors import LLMError
-
-
-logger = get_logger("llm")
+from core.logging import get_logger
 
 
 class GeminiClient:
@@ -18,31 +15,39 @@ class GeminiClient:
         temperature: float,
         max_tokens: int,
         top_p: float,
+        timeout_seconds: float,
     ) -> None:
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
         except Exception as exc:  # pragma: no cover - import guard
             raise RuntimeError(
-                "Missing dependency: google-generativeai. "
-                "Install with `pip install google-generativeai`."
+                "Missing dependency: google-genai. "
+                "Install with `pip install google-genai`."
             ) from exc
-
-        genai.configure(api_key=api_key)
-        self._model = genai.GenerativeModel(model)
-        self._generation_config = {
-            "temperature": temperature,
-            "max_output_tokens": max_tokens,
-            "top_p": top_p,
-        }
+        self._types = types
+        self._client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=timeout_seconds),
+        )
+        self._model_name = model
+        self._generation_config = types.GenerateContentConfig(
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_tokens,
+        )
 
     def generate(self, prompt: str) -> str:
+        logger = get_logger("llm")
         last_exc = None
 
         for attempt in range(3):
             try:
                 start = time.time()
-                response = self._model.generate_content(
-                    prompt, generation_config=self._generation_config
+                response = self._client.models.generate_content(
+                    model=self._model_name,
+                    contents=prompt,
+                    config=self._generation_config,
                 )
 
                 latency_ms = (time.time() - start) * 1000
