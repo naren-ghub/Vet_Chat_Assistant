@@ -93,3 +93,12 @@
 - Updated: rag and fallback prompts with query_context handling.
 - Updated: LLM client to support per-call generation overrides.
 - Tests: Added educational response style test; full suite passing.
+
+## 2026-02-22 22:58 - Streamlit UI Integration (Spec v1.0)
+- Scope: Implement Streamlit UI per ui_architecture_spec.md.
+- Added: ui/app.py with full UI layout, state handling, and API integration.
+- Added: UI state rendering for emergency, clinical, educational, hybrid, clarification, live search.
+- Added: Sidebar pet profile, file upload placeholder, session controls.
+- Added: Top nav status indicator and disclaimer panel.
+- Updated: API response includes response_mode/style/query_context/live_search_flag.
+- Updated: requirements.txt with streamlit dependency.

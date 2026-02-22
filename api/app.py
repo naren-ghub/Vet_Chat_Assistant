@@ -24,6 +24,7 @@ class ChatResponseModel(BaseModel):
     text: str
     citations: List[Dict[str, Any]] = []
     emergency: bool = False
+    emergency_flag: bool = False
     map_link: Optional[str] = None
     follow_up_questions: List[str] = []
     vet_response: Optional[VetResponse] = None

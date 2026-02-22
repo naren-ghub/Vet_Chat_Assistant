@@ -296,6 +296,7 @@ def chat(
             response_mode="clinic_locator",
             response_style=response_style,
             query_context=query_context,
+            emergency_flag=False,
         )
 
     if route.route == "emergency" or is_emergency(query, config.emergency_threshold):
@@ -311,6 +312,7 @@ def chat(
             response_mode="emergency",
             response_style="clinical",
             query_context=query_context,
+            emergency_flag=True,
         )
 
     profile_key = json.dumps(session.pet_profile, sort_keys=True, default=str)
@@ -405,6 +407,7 @@ def chat(
             response_style=response_style,
             query_context=query_context,
             live_search_flag=live_search_flag,
+            emergency_flag=False,
         )
         _response_cache.set(response_key, response)
         return response
@@ -419,6 +422,7 @@ def chat(
             response_mode=response_mode,
             response_style=response_style,
             query_context=query_context,
+            emergency_flag=False,
         )
 
     if response_mode == "hybrid_partial":
@@ -447,6 +451,7 @@ def chat(
             response_mode=response_mode,
             response_style=response_style,
             query_context=query_context,
+            emergency_flag=False,
         )
         _response_cache.set(response_key, response)
         return response
@@ -496,6 +501,7 @@ def chat(
                 response_style=response_style,
                 query_context=query_context,
                 live_search_flag=live_search_flag,
+                emergency_flag=False,
             )
             _response_cache.set(query.lower(), response)
             return response
@@ -517,6 +523,7 @@ def chat(
             response_style=response_style,
             query_context=query_context,
             live_search_flag=live_search_flag,
+            emergency_flag=False,
         )
         _response_cache.set(query.lower(), response)
         return response
@@ -544,6 +551,7 @@ def chat(
         response_style=response_style,
         query_context=query_context,
         live_search_flag=live_search_flag,
+        emergency_flag=False,
     )
     _response_cache.set(response_key, response)
     return response

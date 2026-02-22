@@ -35,6 +35,7 @@ class ChatResponse:
     text: str
     citations: List[Dict[str, Any]] = field(default_factory=list)
     emergency: bool = False
+    emergency_flag: bool = False
     map_link: Optional[str] = None
     follow_up_questions: List[str] = field(default_factory=list)
     vet_response: Optional[Dict[str, Any]] = None
