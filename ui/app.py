@@ -377,7 +377,6 @@ def main() -> None:
             handle_user_message(suggestion)
         if st.session_state.landing_submit and st.session_state.landing_input.strip():
             message = st.session_state.landing_input.strip()
-            st.session_state.landing_input = ""
             st.session_state.landing_submit = False
             handle_user_message(message)
         return
