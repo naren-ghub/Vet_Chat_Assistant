@@ -5,7 +5,13 @@ from retrieval.ingest import ingest_kb
 from retrieval.vector_store import get_collection, query_collection
 
 
-def test_full_retrieval_pipeline(tmp_path: Path):
+class DummyEmbedder:
+    def encode(self, texts, **kwargs):
+        return [[0.1] * 8 for _ in texts]
+
+
+def test_full_retrieval_pipeline(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr("retrieval.embedding.get_embedding_model", lambda name: DummyEmbedder())
     kb_root = tmp_path / "kb_raw"
     kb_root.mkdir()
     doc_path = kb_root / "sample.txt"

@@ -45,7 +45,7 @@ def _infer_metadata(path: Path) -> Dict:
         "chunk_id": "",
         "source_title": path.stem,
         "organization": "unknown",
-        "publication_year": year,
+        "publication_year": year or 0,
         "section_reference": "",
         "url": "",
         "evidence_level": "unknown",
@@ -53,8 +53,17 @@ def _infer_metadata(path: Path) -> Dict:
         "species": species,
         "category": category,
         "source": source,
-        "year": year,
+        "year": year or 0,
     }
+
+
+def _sanitize_metadata(meta: Dict) -> Dict:
+    cleaned = {}
+    for key, value in meta.items():
+        if value is None:
+            continue
+        cleaned[key] = value
+    return cleaned
 
 
 def ingest_kb(
@@ -86,7 +95,7 @@ def ingest_kb(
         chunks = chunk_text(text, chunk_size, chunk_overlap)
         for idx, chunk in enumerate(chunks):
             docs.append(chunk)
-            meta = _infer_metadata(path)
+            meta = _sanitize_metadata(_infer_metadata(path))
             meta["chunk_id"] = f"{path.stem}-{idx}"
             metas.append(meta)
             ids.append(str(uuid.uuid4()))
