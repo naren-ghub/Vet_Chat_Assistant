@@ -280,6 +280,10 @@ def chat(
         config.intent_medium_threshold,
     )
     emergency_score_value = emergency_score(query)
+    query_context = _determine_query_context(query, session.pet_profile)
+    response_style = _determine_response_style(
+        route.intent, query, emergency_score_value, config.emergency_threshold, query_context
+    )
     _logger.info("emergency_score=%.2f", emergency_score_value)
     session.last_intent = route.intent
     _logger.info("intent=%s confidence=%.2f route=%s", route.intent, route.confidence, route.route)
@@ -289,6 +293,9 @@ def chat(
         return ChatResponse(
             text="Here is a nearby veterinary clinic search link.",
             map_link=link,
+            response_mode="clinic_locator",
+            response_style=response_style,
+            query_context=query_context,
         )
 
     if route.route == "emergency" or is_emergency(query, config.emergency_threshold):
@@ -301,12 +308,11 @@ def chat(
             text=answer,
             emergency=True,
             vet_response=vet_response.model_dump(),
+            response_mode="emergency",
+            response_style="clinical",
+            query_context=query_context,
         )
 
-    query_context = _determine_query_context(query, session.pet_profile)
-    response_style = _determine_response_style(
-        route.intent, query, emergency_score_value, config.emergency_threshold, query_context
-    )
     profile_key = json.dumps(session.pet_profile, sort_keys=True, default=str)
     response_key = (
         f"{query.lower()}|{profile_key}|{session.last_intent or ''}|"
@@ -352,6 +358,7 @@ def chat(
         response_mode = "live_search"
 
     if response_style == "educational":
+        live_search_flag = False
         if config.live_search_enabled and force_live_search:
             allowlist = load_domain_allowlist(config.domain_allowlist_path)
             try:
@@ -366,6 +373,7 @@ def chat(
             live_summary = _format_live_search_results(results)
             if live_summary:
                 rag_text = f"{rag_text}\n\n{live_summary}"
+                live_search_flag = True
                 citations.extend(
                     [
                         {
@@ -393,6 +401,10 @@ def chat(
         response = ChatResponse(
             text=text,
             citations=[c.model_dump() for c in validated_citations],
+            response_mode=response_mode,
+            response_style=response_style,
+            query_context=query_context,
+            live_search_flag=live_search_flag,
         )
         _response_cache.set(response_key, response)
         return response
@@ -404,6 +416,9 @@ def chat(
         return ChatResponse(
             text=text,
             follow_up_questions=questions,
+            response_mode=response_mode,
+            response_style=response_style,
+            query_context=query_context,
         )
 
     if response_mode == "hybrid_partial":
@@ -429,10 +444,14 @@ def chat(
             citations=[c.model_dump() for c in vet_response.citations],
             follow_up_questions=questions,
             vet_response=vet_response.model_dump(),
+            response_mode=response_mode,
+            response_style=response_style,
+            query_context=query_context,
         )
         _response_cache.set(response_key, response)
         return response
 
+    live_search_flag = False
     if response_mode == "live_search" and config.live_search_enabled:
         allowlist = load_domain_allowlist(config.domain_allowlist_path)
         try:
@@ -445,6 +464,7 @@ def chat(
         except LiveSearchError:
             results = []
         live_summary = _format_live_search_results(results)
+        live_search_flag = bool(live_summary)
         if live_summary:
             rag_text = f"{rag_text}\n\n{live_summary}"
             citations.extend(
@@ -472,6 +492,10 @@ def chat(
                 text=answer,
                 citations=[],
                 vet_response=vet_response.model_dump(),
+                response_mode=response_mode,
+                response_style=response_style,
+                query_context=query_context,
+                live_search_flag=live_search_flag,
             )
             _response_cache.set(query.lower(), response)
             return response
@@ -489,6 +513,10 @@ def chat(
             text=answer,
             citations=[],
             vet_response=vet_response.model_dump(),
+            response_mode=response_mode,
+            response_style=response_style,
+            query_context=query_context,
+            live_search_flag=live_search_flag,
         )
         _response_cache.set(query.lower(), response)
         return response
@@ -512,6 +540,10 @@ def chat(
         text=answer,
         citations=[c.model_dump() for c in vet_response.citations],
         vet_response=vet_response.model_dump(),
+        response_mode=response_mode if response_mode in {"full_rag", "live_search"} else "full_rag",
+        response_style=response_style,
+        query_context=query_context,
+        live_search_flag=live_search_flag,
     )
     _response_cache.set(response_key, response)
     return response

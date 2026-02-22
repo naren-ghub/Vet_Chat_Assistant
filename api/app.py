@@ -27,6 +27,10 @@ class ChatResponseModel(BaseModel):
     map_link: Optional[str] = None
     follow_up_questions: List[str] = []
     vet_response: Optional[VetResponse] = None
+    response_mode: Optional[str] = None
+    response_style: Optional[str] = None
+    query_context: Optional[str] = None
+    live_search_flag: bool = False
 
 
 class LocationRequest(BaseModel):
