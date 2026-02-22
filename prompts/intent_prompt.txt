@@ -1,0 +1,19 @@
+Classify the user intent.
+
+INTENTS:
+- symptom_inquiry
+- emergency
+- clinic_locator
+- vaccination
+- pet_care
+- follow_up
+- general_info
+
+USER MESSAGE:
+"{message}"
+
+Return ONLY the intent label.
+
+prompt_version = "INTENT_v1.0"
+last_updated_date = "2026-02-22"
+owner = "vet-chat-core"

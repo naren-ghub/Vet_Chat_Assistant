@@ -1,0 +1,21 @@
+Summarize the latest veterinary guidance from the provided trusted sources.
+
+TOPIC:
+{topic}
+
+SEARCH RESULTS:
+{filtered_search_results}
+
+Provide:
+Latest Guidance:
+
+Key Points:
+- point
+- point
+- point
+
+Mention that recommendations may vary by veterinarian.
+
+prompt_version = "LIVE_v1.0"
+last_updated_date = "2026-02-22"
+owner = "vet-chat-core"

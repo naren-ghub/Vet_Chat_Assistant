@@ -1,0 +1,17 @@
+.env
+.venv/
+venv/
+env/
+data/
+chroma/
+*.sqlite3
+kb_raw/
+__pycache__/
+.pytest_cache/
+.cache/
+htmlcov/
+.coverage
+.vscode/
+.idea/
+*.log
+*.pyc

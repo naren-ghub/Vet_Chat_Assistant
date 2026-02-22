@@ -1,0 +1,24 @@
+The user's message lacks important details needed to provide safe guidance.
+
+USER MESSAGE:
+{user_input}
+
+MISSING INFORMATION:
+{missing_fields}
+
+SUSPECTED INTENT:
+{suspected_intent}
+
+Ask 2–4 concise questions to gather the missing details.
+
+RULES:
+• Be polite and supportive.
+• Keep questions short.
+• Only ask essential questions.
+
+OUTPUT:
+Return only the questions as bullet points.
+
+prompt_version = "QUESTION_v1.0"
+last_updated_date = "2026-02-22"
+owner = "vet-chat-core"
