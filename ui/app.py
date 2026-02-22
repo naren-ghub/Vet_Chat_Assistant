@@ -11,6 +11,10 @@ import streamlit as st
 API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
 
+def _landing_submit() -> None:
+    st.session_state.landing_submit = True
+
+
 def _init_session_state() -> None:
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(uuid.uuid4())
@@ -28,6 +32,10 @@ def _init_session_state() -> None:
         st.session_state.uploaded_files = []
     if "is_loading" not in st.session_state:
         st.session_state.is_loading = False
+    if "landing_input" not in st.session_state:
+        st.session_state.landing_input = ""
+    if "landing_submit" not in st.session_state:
+        st.session_state.landing_submit = False
 
 
 def _set_styles() -> None:
@@ -105,6 +113,15 @@ html, body, [class*="css"]  {
 .disclaimer {
   font-size: 0.75rem;
   color: #5a6b7f;
+}
+
+.landing-input input {
+  padding-right: 2.2rem !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.7rem center !important;
+  background-size: 1.1rem 1.1rem !important;
+  /* Inline SVG (send icon) */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%232b3a55' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 2L11 13'/%3E%3Cpath d='M22 2L15 22L11 13L2 9L22 2Z'/%3E%3C/svg%3E") !important;
 }
 </style>
 """,
@@ -203,6 +220,15 @@ def _empty_state() -> Optional[str]:
     for idx, suggestion in enumerate(suggestions):
         if cols[idx % 2].button(suggestion):
             clicked = suggestion
+    st.markdown("<div class='landing-input'>", unsafe_allow_html=True)
+    st.text_input(
+        "Ask me",
+        key="landing_input",
+        placeholder="Ask me",
+        label_visibility="collapsed",
+        on_change=_landing_submit,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
     return clicked
 
@@ -319,43 +345,13 @@ def main() -> None:
     _init_session_state()
     _set_styles()
 
-    system_state = {"status": "ready"}
-    if st.session_state.chat_history:
-        last = st.session_state.chat_history[-1]
-        if last.get("emergency"):
-            system_state["status"] = "emergency"
-        elif last.get("live_search_flag"):
-            system_state["status"] = "live_search"
-
-    _render_top_nav(system_state)
     _render_sidebar()
 
-    st.markdown("---")
-    if not st.session_state.chat_history:
-        suggestion = _empty_state()
-        if suggestion:
-            st.session_state.chat_history.append({"role": "user", "content": suggestion})
-            st.session_state.is_loading = True
-
-    for item in st.session_state.chat_history:
-        role = item.get("role")
-        if role == "user":
-            with st.chat_message("user"):
-                st.write(item.get("content", ""))
-        else:
-            with st.chat_message("assistant"):
-                _render_response(item.get("content", {}))
-
-    user_input = st.chat_input("Ask about your pet's health...")
-    if user_input and not st.session_state.is_loading:
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
-        st.session_state.is_loading = True
-
-    if st.session_state.is_loading:
+    def handle_user_message(message: str) -> None:
+        st.session_state.chat_history.append({"role": "user", "content": message})
         with st.spinner("Thinking..."):
             try:
-                latest_user = st.session_state.chat_history[-1]["content"]
-                payload = _send_message(latest_user)
+                payload = _send_message(message)
                 st.session_state.chat_history.append({"role": "assistant", "content": payload})
             except requests.RequestException:
                 st.session_state.chat_history.append(
@@ -367,12 +363,47 @@ def main() -> None:
                                 "Please consult a veterinarian if symptoms persist."
                             ),
                             "response_style": "clinical",
+                            "response_mode": "fallback",
                         },
                     }
                 )
-            finally:
-                st.session_state.is_loading = False
-                st.rerun()
+        st.rerun()
+
+    landing_mode = len(st.session_state.chat_history) == 0
+
+    if landing_mode:
+        suggestion = _empty_state()
+        if suggestion:
+            handle_user_message(suggestion)
+        if st.session_state.landing_submit and st.session_state.landing_input.strip():
+            message = st.session_state.landing_input.strip()
+            st.session_state.landing_input = ""
+            st.session_state.landing_submit = False
+            handle_user_message(message)
+        return
+
+    system_state = {"status": "ready"}
+    last = st.session_state.chat_history[-1]
+    if last.get("emergency") or last.get("emergency_flag"):
+        system_state["status"] = "emergency"
+    elif last.get("live_search_flag"):
+        system_state["status"] = "live_search"
+
+    _render_top_nav(system_state)
+    st.markdown("---")
+
+    for item in st.session_state.chat_history:
+        role = item.get("role")
+        if role == "user":
+            with st.chat_message("user"):
+                st.write(item.get("content", ""))
+        else:
+            with st.chat_message("assistant"):
+                _render_response(item.get("content", {}))
+
+    user_input = st.chat_input("Ask me")
+    if user_input:
+        handle_user_message(user_input.strip())
 
 
 if __name__ == "__main__":
