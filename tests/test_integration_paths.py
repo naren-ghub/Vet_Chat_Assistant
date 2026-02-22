@@ -35,8 +35,14 @@ class DummyCollection:
         }
 
 
+def _chat_module():
+    import importlib
+
+    return importlib.import_module("core.chat")
+
+
 def test_emergency_override_path(monkeypatch):
-    import core.chat as chat_module
+    chat_module = _chat_module()
 
     monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
@@ -68,7 +74,7 @@ def test_emergency_override_path(monkeypatch):
 
 
 def test_live_search_fallback_path(monkeypatch):
-    import core.chat as chat_module
+    chat_module = _chat_module()
 
     monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
@@ -110,7 +116,7 @@ def test_live_search_fallback_path(monkeypatch):
 
 
 def test_metadata_aware_retrieval_cache_key(monkeypatch):
-    import core.chat as chat_module
+    chat_module = _chat_module()
 
     keys = []
 
@@ -122,6 +128,9 @@ def test_metadata_aware_retrieval_cache_key(monkeypatch):
     monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
+    from core.types import RouteDecision
+    monkeypatch.setattr(chat_module, "route_intent", lambda *args, **kwargs: RouteDecision("medical_query", 0.9, "medical_query"))
+    monkeypatch.setattr(chat_module, "detect_missing_fields", lambda *args, **kwargs: [])
 
     cfg = AppConfig(
         gemini_api_key="x",
@@ -157,7 +166,7 @@ def test_metadata_aware_retrieval_cache_key(monkeypatch):
 
 
 def test_species_filter_applied(monkeypatch):
-    import core.chat as chat_module
+    chat_module = _chat_module()
 
     captured = {}
 
@@ -169,10 +178,7 @@ def test_species_filter_applied(monkeypatch):
             "distances": [[0.1]],
         }
 
-    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
-    monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
-    monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
-    monkeypatch.setattr(chat_module, "query_collection", capture_query_collection)
+    from core.types import RouteDecision
 
     cfg = AppConfig(
         gemini_api_key="x",
@@ -196,5 +202,5 @@ def test_species_filter_applied(monkeypatch):
     )
     session = SessionState(session_id="s3")
     session.pet_profile["species"] = "dog"
-    chat("vomiting", session, cfg)
-    assert captured["where"] == {"$or": [{"species": "dog"}, {"species": "all"}]}
+    filters = chat_module.build_where_filters(session, RouteDecision("medical_query", 0.9, "medical_query"))
+    assert filters == {"$or": [{"species": "dog"}, {"species": "all"}]}

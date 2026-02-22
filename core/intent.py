@@ -83,12 +83,13 @@ def has_immediate_override(text: str) -> bool:
 def embedding_similarity_intent(
     text: str, embedder, exemplars: Dict[str, List[str]]
 ) -> Tuple[str, float]:
-    query_vec = embedder.encode([text])[0]
+    query_vec = np.array(embedder.encode([text])[0])
     best_intent = "medical_query"
     best_score = -1.0
     for intent, samples in exemplars.items():
         sample_vecs = embedder.encode(samples)
         for vec in sample_vecs:
+            vec = np.array(vec)
             denom = (np.linalg.norm(query_vec) * np.linalg.norm(vec)) + 1e-9
             score = float((query_vec @ vec) / denom)
             if score > best_score:

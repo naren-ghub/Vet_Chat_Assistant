@@ -44,6 +44,16 @@ def _build_filter_key(session: SessionState) -> str:
     return json.dumps(filter_payload, sort_keys=True)
 
 
+def build_where_filters(session: SessionState, route) -> dict | None:
+    filters = {}
+    species = session.pet_profile.get("species")
+    if species:
+        filters["$or"] = [{"species": species}, {"species": "all"}]
+    if route.intent == "vaccination":
+        filters["category"] = "vaccination"
+    return filters if filters else None
+
+
 def _build_retrieval_key(query: str, config: AppConfig, session: SessionState) -> str:
     filter_key = _build_filter_key(session)
     return (
@@ -159,13 +169,7 @@ def chat(query: str, session: SessionState, config: AppConfig) -> ChatResponse:
         return cached_response
 
     query_embedding = _embed_query(embedder, query)
-    filters = {}
-    species = session.pet_profile.get("species")
-    if species:
-        filters["$or"] = [{"species": species}, {"species": "all"}]
-    if route.intent == "vaccination":
-        filters["category"] = "vaccination"
-    where_filters = filters if filters else None
+    where_filters = build_where_filters(session, route)
     retrieval_key = _build_retrieval_key(query, config, session)
     cached_retrieval = _retrieval_cache.get(retrieval_key)
     if cached_retrieval:
