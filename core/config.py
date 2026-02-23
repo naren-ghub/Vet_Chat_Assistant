@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from typing import List
 
+from core.errors import ConfigurationError
+
 try:
     from dotenv import load_dotenv
 except Exception:  # pragma: no cover - optional
@@ -12,8 +14,8 @@ except Exception:  # pragma: no cover - optional
 
 @dataclass
 class AppConfig:
-    gemini_api_key: str
-    gemini_model: str
+    groq_api_key: str
+    groq_model: str
     llm_temperature: float
     llm_max_tokens: int
     llm_top_p: float
@@ -36,16 +38,18 @@ class AppConfig:
 def _env(name: str, default: str | None = None) -> str:
     value = os.getenv(name, default)
     if value is None or value == "":
-        raise RuntimeError(f"Missing required environment variable: {name}")
+        raise ConfigurationError(f"Missing required environment variable: {name}")
     return value
 
 
 def load_config() -> AppConfig:
     if load_dotenv:
         load_dotenv()
+    groq_api_key = _env("GROQ_API_KEY")
+
     return AppConfig(
-        gemini_api_key=_env("GEMINI_API_KEY"),
-        gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+        groq_api_key=groq_api_key,
+        groq_model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
         llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.2")),
         llm_max_tokens=int(os.getenv("LLM_MAX_TOKENS", "512")),
         llm_top_p=float(os.getenv("LLM_TOP_P", "0.9")),

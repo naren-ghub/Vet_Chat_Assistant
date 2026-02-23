@@ -8,7 +8,9 @@ import re
 from core.cache import TTLCache
 from core.config import AppConfig, load_domain_allowlist
 from core.errors import LiveSearchError, VectorDBError
-from core.llm import GeminiClient
+from core.llm_base import LLMClient, LLMConfig
+from core.llm_policy import select_llm_config
+from core.llm_provider import build_llm_client
 from core.logging import get_logger
 from core.prompts import compose_prompt
 from core.response import (
@@ -81,6 +83,13 @@ _CONCEPTUAL_STARTS = (
 )
 _WEIGHT_PATTERN = re.compile(r"\b\d+(\.\d+)?\s*(kg|kgs|lb|lbs|pounds)\b", re.I)
 _AGE_PATTERN = re.compile(r"\b\d+\s*(week|weeks|month|months|year|years)\b", re.I)
+_PROMPT_LEAK_PATTERNS = [
+    re.compile(r"\bprompt_version\s*=", re.I),
+    re.compile(r"\blast_updated_date\s*=", re.I),
+    re.compile(r"\bowner\s*=", re.I),
+    re.compile(r"\bmaster system prompt\b", re.I),
+    re.compile(r"\byou are a veterinary assistance ai\b", re.I),
+]
 
 
 def _build_filter_key(session: SessionState) -> str:
@@ -156,11 +165,12 @@ def _format_live_search_results(results) -> str:
 
 
 def _llm_generate(
-    llm: GeminiClient,
+    llm: LLMClient,
     prompt: str,
     temperature: float | None = None,
     max_tokens: int | None = None,
     top_p: float | None = None,
+    log_meta: dict | None = None,
 ) -> str:
     cache_key = json.dumps(
         {
@@ -174,6 +184,17 @@ def _llm_generate(
     cached = _llm_cache.get(cache_key)
     if cached:
         return cached
+    if log_meta:
+        _logger.info(
+            "llm_call model=%s query_context=%s response_style=%s response_mode=%s temperature=%s max_tokens=%s top_p=%s",
+            getattr(llm, "model_name", "unknown"),
+            log_meta.get("query_context"),
+            log_meta.get("response_style"),
+            log_meta.get("response_mode"),
+            temperature,
+            max_tokens,
+            top_p,
+        )
     text = llm.generate(prompt, temperature=temperature, max_tokens=max_tokens, top_p=top_p)
     _llm_cache.set(cache_key, text)
     return text
@@ -188,13 +209,32 @@ def _embed_query(embedder: BGEEmbedder, query: str):
     return vec
 
 
-def _validate_llm_response(prompt: str, llm: GeminiClient) -> VetResponse:
-    text = _llm_generate(llm, prompt)
+def _validate_llm_response(
+    prompt: str,
+    llm: LLMClient,
+    llm_config: LLMConfig,
+    log_meta: dict | None = None,
+) -> VetResponse:
+    text = _llm_generate(
+        llm,
+        prompt,
+        temperature=llm_config.temperature,
+        max_tokens=llm_config.max_tokens,
+        top_p=llm_config.top_p,
+        log_meta=log_meta,
+    )
     parsed = parse_vet_response(text)
     if parsed:
         return parsed
     retry_prompt = prompt + "\n\nReturn ONLY valid JSON that matches the schema."
-    text = _llm_generate(llm, retry_prompt)
+    text = _llm_generate(
+        llm,
+        retry_prompt,
+        temperature=llm_config.temperature,
+        max_tokens=llm_config.max_tokens,
+        top_p=llm_config.top_p,
+        log_meta=log_meta,
+    )
     parsed = parse_vet_response(text)
     if parsed:
         return parsed
@@ -248,6 +288,28 @@ def _determine_response_style(
     return "clinical"
 
 
+def _has_prompt_leak(text: str) -> bool:
+    return any(p.search(text) for p in _PROMPT_LEAK_PATTERNS)
+
+
+def _override_if_unsafe(text: str, query_context: str) -> str:
+    # Prevent leaking system/prompt content in any context.
+    if _has_prompt_leak(text):
+        return (
+            "I can’t share system instructions. If you tell me your pet’s species, age, and symptoms, "
+            "I can help with safe guidance."
+        )
+
+    # Post-generation safety net: no dosing instructions for real pet cases.
+    if (query_context or "").upper() == "CLINICAL_SPECIFIC" and DOSAGE_PATTERN.search(text):
+        return (
+            "Safety note: I can’t provide medication dosages for a specific animal. "
+            "Please contact a licensed veterinarian for dosing guidance."
+        )
+
+    return text
+
+
 def chat(
     query: str,
     session: SessionState,
@@ -256,14 +318,7 @@ def chat(
     embedder=None,
     collection=None,
 ) -> ChatResponse:
-    llm = llm_client or GeminiClient(
-        config.gemini_api_key,
-        config.gemini_model,
-        config.llm_temperature,
-        config.llm_max_tokens,
-        config.llm_top_p,
-        config.llm_timeout_seconds,
-    )
+    llm: LLMClient = llm_client or build_llm_client(config)
     embedder = embedder or BGEEmbedder(config.bge_model)
     if collection is None:
         try:
@@ -301,10 +356,21 @@ def chat(
 
     if route.route == "emergency" or is_emergency(query, config.emergency_threshold):
         prompt = compose_prompt("prompts/emergency_prompt.txt", question=query)
-        vet_response = _validate_llm_response(prompt, llm)
+        llm_cfg = select_llm_config("CLINICAL_SPECIFIC", "clinical", config)
+        vet_response = _validate_llm_response(
+            prompt,
+            llm,
+            llm_cfg,
+            log_meta={
+                "query_context": "CLINICAL_SPECIFIC",
+                "response_style": "clinical",
+                "response_mode": "emergency",
+            },
+        )
         vet_response.citations = []
         answer = format_vet_response(vet_response)
         answer = apply_safety_guardrails(answer)
+        answer = _override_if_unsafe(answer, query_context)
         return ChatResponse(
             text=answer,
             emergency=True,
@@ -359,6 +425,8 @@ def chat(
     if config.live_search_enabled and force_live_search:
         response_mode = "live_search"
 
+    llm_cfg = select_llm_config(query_context, response_style, config)
+
     if response_style == "educational":
         live_search_flag = False
         if config.live_search_enabled and force_live_search:
@@ -394,7 +462,19 @@ def chat(
             context=rag_text,
             query_context=query_context,
         )
-        text = _llm_generate(llm, prompt, temperature=0.4, max_tokens=600)
+        text = _llm_generate(
+            llm,
+            prompt,
+            temperature=llm_cfg.temperature,
+            max_tokens=llm_cfg.max_tokens,
+            top_p=llm_cfg.top_p,
+            log_meta={
+                "query_context": query_context,
+                "response_style": response_style,
+                "response_mode": response_mode,
+            },
+        )
+        text = _override_if_unsafe(text, query_context)
         validated_citations = (
             validate_kb_citations(citations, allowed_titles, min_similarity=0.75)
             if citations
@@ -414,8 +494,20 @@ def chat(
 
     if response_mode == "clarification_required":
         missing = detect_missing_fields(query, session.pet_profile)
-        guidance, questions = generate_questions(llm, query, missing, route.intent)
+        guidance, questions = generate_questions(
+            llm,
+            query,
+            missing,
+            route.intent,
+            llm_config=llm_cfg,
+            log_meta={
+                "query_context": query_context,
+                "response_style": response_style,
+                "response_mode": response_mode,
+            },
+        )
         text = guidance.strip() if guidance else "I need a few details to help."
+        text = _override_if_unsafe(text, query_context)
         return ChatResponse(
             text=text,
             follow_up_questions=questions,
@@ -427,7 +519,18 @@ def chat(
 
     if response_mode == "hybrid_partial":
         missing = detect_missing_fields(query, session.pet_profile)
-        guidance, questions = generate_questions(llm, query, missing, route.intent)
+        guidance, questions = generate_questions(
+            llm,
+            query,
+            missing,
+            route.intent,
+            llm_config=llm_cfg,
+            log_meta={
+                "query_context": query_context,
+                "response_style": response_style,
+                "response_mode": response_mode,
+            },
+        )
         prompt = compose_prompt(
             "prompts/rag_prompt.txt",
             user_question=query,
@@ -436,13 +539,23 @@ def chat(
             conversation_context="",
             query_context=query_context,
         )
-        vet_response = _validate_llm_response(prompt, llm)
+        vet_response = _validate_llm_response(
+            prompt,
+            llm,
+            llm_cfg,
+            log_meta={
+                "query_context": query_context,
+                "response_style": response_style,
+                "response_mode": response_mode,
+            },
+        )
         if citations:
             vet_response.citations = validate_kb_citations(
                 citations, allowed_titles, min_similarity=0.75
             )
         answer = format_vet_response(vet_response)
         answer = apply_safety_guardrails(answer)
+        answer = _override_if_unsafe(answer, query_context)
         response = ChatResponse(
             text=answer,
             citations=[c.model_dump() for c in vet_response.citations],
@@ -490,9 +603,19 @@ def chat(
                 question=query,
                 query_context=query_context,
             )
-            vet_response = _validate_llm_response(fallback_prompt, llm)
+            vet_response = _validate_llm_response(
+                fallback_prompt,
+                llm,
+                llm_cfg,
+                log_meta={
+                    "query_context": query_context,
+                    "response_style": response_style,
+                    "response_mode": response_mode,
+                },
+            )
             answer = format_vet_response(vet_response)
             answer = apply_safety_guardrails(answer)
+            answer = _override_if_unsafe(answer, query_context)
             response = ChatResponse(
                 text=answer,
                 citations=[],
@@ -512,9 +635,19 @@ def chat(
             question=query,
             query_context=query_context,
         )
-        vet_response = _validate_llm_response(fallback_prompt, llm)
+        vet_response = _validate_llm_response(
+            fallback_prompt,
+            llm,
+            llm_cfg,
+            log_meta={
+                "query_context": query_context,
+                "response_style": response_style,
+                "response_mode": response_mode,
+            },
+        )
         answer = format_vet_response(vet_response)
         answer = apply_safety_guardrails(answer)
+        answer = _override_if_unsafe(answer, query_context)
         response = ChatResponse(
             text=answer,
             citations=[],
@@ -536,13 +669,23 @@ def chat(
         conversation_context="",
         query_context=query_context,
     )
-    vet_response = _validate_llm_response(prompt, llm)
+    vet_response = _validate_llm_response(
+        prompt,
+        llm,
+        llm_cfg,
+        log_meta={
+            "query_context": query_context,
+            "response_style": response_style,
+            "response_mode": response_mode,
+        },
+    )
     if citations:
         vet_response.citations = validate_kb_citations(
             citations, allowed_titles, min_similarity=0.75
         )
     answer = format_vet_response(vet_response)
     answer = apply_safety_guardrails(answer)
+    answer = _override_if_unsafe(answer, query_context)
     response = ChatResponse(
         text=answer,
         citations=[c.model_dump() for c in vet_response.citations],

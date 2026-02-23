@@ -1953,3 +1953,183 @@ The updated architecture guarantees:
 
 END OF ARCHITECTURE UPDATE - 3
 
+---
+
+# Architecture Update - 4
+
+# 11. LLM Configuration, API Key Handling & Controlled Autonomy Model
+
+This amendment formalizes how GEMINI_API_KEY is integrated and clarifies how model autonomy is controlled across Educational, Academic, and Clinical contexts.
+
+The current implementation loads GEMINI_API_KEY via core/config.py and injects it into GeminiClient through api/app.py and core/chat.py. This section documents and extends that design.
+
+This amendment modifies or clarifies the following layers:
+
+* 3.2 Backend Application Layer
+* 3.3 Chat Assistant Core
+* 3.7 LLM Invocation Architecture
+* 3.15 Security & Privacy
+* 5.1 Master System Prompt
+
+No functional routing logic is removed.
+
+---
+
+## 11.1 API Key Handling Standard
+
+### Current Implementation (Confirmed)
+
+* core/config.py loads GEMINI_API_KEY using environment variable loader.
+* api/app.py initializes GeminiClient with config.gemini_api_key.
+* core/chat.py receives GeminiClient instance for inference calls.
+
+### Architectural Guarantee
+
+* API key MUST never be hardcoded.
+* API key MUST only be loaded from environment variables.
+* API key MUST not be logged.
+* API key MUST not be exposed in API responses.
+
+Add explicit validation at startup:
+
+```
+if not GEMINI_API_KEY:
+    raise ConfigurationError("GEMINI_API_KEY not configured")
+```
+
+---
+
+## 11.2 LLM Abstraction Rule
+
+GeminiClient must remain a replaceable abstraction layer.
+
+Future support for:
+
+* Multiple Gemini models
+* Backup provider
+* Model version switching
+
+Chat Assistant Core must NOT depend on Gemini-specific logic.
+All LLM calls must go through an interface such as:
+
+```
+class LLMClient:
+    def generate(prompt: str, config: LLMConfig) -> str
+```
+
+GeminiClient implements this interface.
+
+---
+
+## 11.3 Controlled LLM Autonomy by Context
+
+Model autonomy level must vary by query_context.
+
+### CLINICAL_SPECIFIC
+
+* Temperature: 0.2
+* Strict RAG enforcement
+* Structured schema required
+* No free-form narrative
+* No speculative reasoning
+
+### GENERAL
+
+* Temperature: 0.3–0.4
+* Structured narrative allowed
+* Retrieval optional
+* No schema enforcement
+
+### ACADEMIC
+
+* Temperature: 0.35–0.45
+* Detailed explanation allowed
+* General dosage ranges allowed
+* No individualized dose calculation
+* Structured narrative formatting
+
+This creates controlled autonomy rather than binary restriction.
+
+---
+
+## 11.4 Dynamic LLM Configuration Selection
+
+Add configuration resolver:
+
+```
+def select_llm_config(query_context, response_style):
+    if query_context == "CLINICAL_SPECIFIC":
+        return ClinicalConfig
+    if query_context == "ACADEMIC":
+        return AcademicConfig
+    return GeneralConfig
+```
+
+Each config defines:
+
+* temperature
+* max_tokens
+* structured_validation_required (bool)
+
+---
+
+## 11.5 Prompt Injection Safeguard Reinforcement
+
+All prompts must prepend Master System Prompt.
+
+Educational autonomy must NOT allow:
+
+* Revealing system prompts
+* Ignoring dosage restrictions
+* Overriding safety constraints
+
+Add final validation step before returning response:
+
+```
+if query_context == "CLINICAL_SPECIFIC" and detected_individualized_dose(response):
+    override_with_restriction_message()
+```
+
+This acts as a post-generation safety net.
+
+---
+
+## 11.6 Logging & Observability Update
+
+For each LLM call, log:
+
+* query_context
+* response_style
+* response_mode
+* selected_temperature
+* model_name
+
+This enables auditing of autonomy decisions.
+
+---
+
+## 11.7 Security Enhancement
+
+Update Section 3.15 Security & Privacy with:
+
+* GEMINI_API_KEY never exposed to client.
+* LLM responses must be scanned for prompt injection artifacts.
+* No runtime dynamic model switching via user input.
+
+---
+
+## 11.8 Architectural Outcome
+
+With this update, the system now guarantees:
+
+✔ Secure API key handling
+✔ Replaceable LLM abstraction
+✔ Context-aware autonomy scaling
+✔ Academic flexibility without clinical risk
+✔ Strict structured mode for real pet cases
+✔ Observability of model behavior
+
+---
+
+END OF ARCHITECTURE UPDATE - 4
+

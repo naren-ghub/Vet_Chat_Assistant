@@ -19,3 +19,7 @@ class LiveSearchError(VetChatError):
 
 class ValidationError(VetChatError):
     """Structured validation failure."""
+
+
+class ConfigurationError(VetChatError):
+    """Configuration missing or invalid."""

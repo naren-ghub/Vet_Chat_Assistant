@@ -1,10 +1,6 @@
 from fastapi.testclient import TestClient
 import importlib
 
-
-app_module = importlib.import_module("api.app")
-
-
 class DummyLLM:
     def generate(self, prompt: str, **kwargs) -> str:
         return (
@@ -34,7 +30,13 @@ class DummyCollection:
 
 
 def test_chat_endpoint_mocked(monkeypatch):
-    monkeypatch.setattr(app_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setenv("SERPER_API_KEY", "x")
+
+    app_module = importlib.import_module("api.app")
+    app_module = importlib.reload(app_module)
+
+    monkeypatch.setattr(app_module, "build_llm_client", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(app_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(app_module, "get_collection", lambda *args, **kwargs: DummyCollection())
 

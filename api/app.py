@@ -9,7 +9,7 @@ from core.config import load_config
 from core.response import VetResponse
 from core.session_store import SessionStore
 from core.errors import VetChatError
-from core.llm import GeminiClient
+from core.llm_provider import build_llm_client
 from retrieval.embedding import BGEEmbedder
 from retrieval.vector_store import get_collection
 
@@ -53,14 +53,7 @@ def chat_endpoint(payload: ChatRequest) -> ChatResponseModel:
     session = _store.get(payload.session_id)
     if payload.pet_profile:
         session.pet_profile.update(payload.pet_profile)
-    llm = GeminiClient(
-        _config.gemini_api_key,
-        _config.gemini_model,
-        _config.llm_temperature,
-        _config.llm_max_tokens,
-        _config.llm_top_p,
-        _config.llm_timeout_seconds,
-    )
+    llm = build_llm_client(_config)
     embedder = BGEEmbedder(_config.bge_model)
     collection = get_collection(_config.chroma_path)
     try:

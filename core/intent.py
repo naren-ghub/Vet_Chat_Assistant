@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from core.llm import GeminiClient
+from core.llm_base import LLMClient
 from core.prompts import compose_prompt
 import numpy as np
 
@@ -120,7 +120,7 @@ def embedding_similarity_intent(
     return best_intent, min(max(best_score, 0.0), 1.0)
 
 
-def llm_intent(text: str, llm: GeminiClient) -> str:
+def llm_intent(text: str, llm: LLMClient) -> str:
     prompt = compose_prompt("prompts/intent_prompt.txt", message=text)
     label = llm.generate(prompt).strip().lower()
     if label == "symptom_inquiry":

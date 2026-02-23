@@ -44,13 +44,13 @@ def _chat_module():
 def test_emergency_override_path(monkeypatch):
     chat_module = _chat_module()
 
-    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
+    monkeypatch.setattr(chat_module, "build_llm_client", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
 
     cfg = AppConfig(
-        gemini_api_key="x",
-        gemini_model="m",
+        groq_api_key="x",
+        groq_model="llama-3.1-8b-instant",
         llm_temperature=0.2,
         llm_max_tokens=512,
         llm_top_p=0.9,
@@ -77,7 +77,7 @@ def test_emergency_override_path(monkeypatch):
 def test_live_search_fallback_path(monkeypatch):
     chat_module = _chat_module()
 
-    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
+    monkeypatch.setattr(chat_module, "build_llm_client", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
     monkeypatch.setattr(chat_module, "live_search", lambda *args, **kwargs: [])
@@ -92,8 +92,8 @@ def test_live_search_fallback_path(monkeypatch):
     )
 
     cfg = AppConfig(
-        gemini_api_key="x",
-        gemini_model="m",
+        groq_api_key="x",
+        groq_model="llama-3.1-8b-instant",
         llm_temperature=0.2,
         llm_max_tokens=512,
         llm_top_p=0.9,
@@ -127,7 +127,7 @@ def test_metadata_aware_retrieval_cache_key(monkeypatch):
         return None
 
     monkeypatch.setattr(chat_module._retrieval_cache, "get", capture_get)
-    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
+    monkeypatch.setattr(chat_module, "build_llm_client", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
     from core.types import RouteDecision
@@ -135,8 +135,8 @@ def test_metadata_aware_retrieval_cache_key(monkeypatch):
     monkeypatch.setattr(chat_module, "detect_missing_fields", lambda *args, **kwargs: [])
 
     cfg = AppConfig(
-        gemini_api_key="x",
-        gemini_model="m",
+        groq_api_key="x",
+        groq_model="llama-3.1-8b-instant",
         llm_temperature=0.2,
         llm_max_tokens=512,
         llm_top_p=0.9,
@@ -184,8 +184,8 @@ def test_species_filter_applied(monkeypatch):
     from core.types import RouteDecision
 
     cfg = AppConfig(
-        gemini_api_key="x",
-        gemini_model="m",
+        groq_api_key="x",
+        groq_model="llama-3.1-8b-instant",
         llm_temperature=0.2,
         llm_max_tokens=512,
         llm_top_p=0.9,
@@ -224,7 +224,7 @@ def test_hybrid_partial_informational(monkeypatch):
 
     from core.types import RouteDecision
 
-    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
+    monkeypatch.setattr(chat_module, "build_llm_client", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
     monkeypatch.setattr(chat_module, "query_collection", capture_query_collection)
@@ -238,8 +238,8 @@ def test_hybrid_partial_informational(monkeypatch):
     monkeypatch.setattr(chat_module, "detect_missing_fields", lambda *args, **kwargs: ["age"])
 
     cfg = AppConfig(
-        gemini_api_key="x",
-        gemini_model="m",
+        groq_api_key="x",
+        groq_model="llama-3.1-8b-instant",
         llm_temperature=0.2,
         llm_max_tokens=512,
         llm_top_p=0.9,
@@ -283,7 +283,7 @@ def test_live_search_latest_override(monkeypatch):
 
     from core.types import RouteDecision
 
-    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
+    monkeypatch.setattr(chat_module, "build_llm_client", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
     monkeypatch.setattr(chat_module, "query_collection", capture_query_collection)
@@ -291,8 +291,8 @@ def test_live_search_latest_override(monkeypatch):
     monkeypatch.setattr(chat_module, "route_intent", lambda *args, **kwargs: RouteDecision("general_info", 0.9, "medical_query"))
 
     cfg = AppConfig(
-        gemini_api_key="x",
-        gemini_model="m",
+        groq_api_key="x",
+        groq_model="llama-3.1-8b-instant",
         llm_temperature=0.2,
         llm_max_tokens=512,
         llm_top_p=0.9,
@@ -320,7 +320,7 @@ def test_live_search_latest_override(monkeypatch):
 def test_hybrid_blocked_by_toxic(monkeypatch):
     chat_module = _chat_module()
 
-    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: DummyLLM())
+    monkeypatch.setattr(chat_module, "build_llm_client", lambda *args, **kwargs: DummyLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
     monkeypatch.setattr(
@@ -338,8 +338,8 @@ def test_hybrid_blocked_by_toxic(monkeypatch):
     monkeypatch.setattr(chat_module, "detect_missing_fields", lambda *args, **kwargs: ["substance"])
 
     cfg = AppConfig(
-        gemini_api_key="x",
-        gemini_model="m",
+        groq_api_key="x",
+        groq_model="llama-3.1-8b-instant",
         llm_temperature=0.2,
         llm_max_tokens=512,
         llm_top_p=0.9,
@@ -371,7 +371,7 @@ def test_educational_response_style(monkeypatch):
         def generate(self, prompt: str, **kwargs) -> str:
             return "Educational response."
 
-    monkeypatch.setattr(chat_module, "GeminiClient", lambda *args, **kwargs: EduLLM())
+    monkeypatch.setattr(chat_module, "build_llm_client", lambda *args, **kwargs: EduLLM())
     monkeypatch.setattr(chat_module, "BGEEmbedder", lambda *args, **kwargs: DummyEmbedder())
     monkeypatch.setattr(chat_module, "get_collection", lambda *args, **kwargs: DummyCollection())
     monkeypatch.setattr(
@@ -387,8 +387,8 @@ def test_educational_response_style(monkeypatch):
     monkeypatch.setattr(chat_module, "route_intent", lambda *args, **kwargs: RouteDecision("general_info", 0.9, "medical_query"))
 
     cfg = AppConfig(
-        gemini_api_key="x",
-        gemini_model="m",
+        groq_api_key="x",
+        groq_model="llama-3.1-8b-instant",
         llm_temperature=0.2,
         llm_max_tokens=512,
         llm_top_p=0.9,
